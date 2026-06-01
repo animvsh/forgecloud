@@ -1,0 +1,1 @@
+/Users/animesh/Downloads/projects /ankit site/aesthetic-canvas-creation/forgecloud/.claude/skills/gstack/careful/SKILL.md
