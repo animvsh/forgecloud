@@ -17,9 +17,11 @@ import {
   injectFailure,
   resetProject,
   runAllTasks,
+  runFullDemo,
   runNextTask,
   runTask,
   sendChat,
+  skipToDemo,
   startProjectIntake,
   approvePrFn,
 } from "./api";
@@ -130,6 +132,22 @@ export function useResetProject() {
   });
 }
 
+export function useRunFullDemo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => runFullDemo(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
+
+export function useSkipToDemo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => skipToDemo(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
+
 export function useAddComment() {
   const qc = useQueryClient();
   return useMutation({
@@ -139,7 +157,6 @@ export function useAddComment() {
   });
 }
 
-void _useApprovePrStub;
 void getAgentsFn;
 void getApprovals;
 void getChanges;
