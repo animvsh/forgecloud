@@ -1,28 +1,22 @@
 FROM node:20-bookworm-slim
 
-# Install build tools for better-sqlite3 native compile + bun
+# Install build tools for better-sqlite3 native compile
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     make \
     g++ \
     pkg-config \
-    curl \
-    unzip \
     && rm -rf /var/lib/apt/lists/*
-
-# Install bun
-RUN curl -fsSL https://bun.sh/install | bash
-ENV PATH="/root/.bun/bin:${PATH}"
 
 WORKDIR /app
 
-# Install deps
-COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile
+# Install deps with npm (better prebuilt binary support for native modules)
+COPY package.json bun.lock* package-lock.json* ./
+RUN npm install --include=dev --legacy-peer-deps
 
 # Build
 COPY . .
-RUN bun run build
+RUN npm run build
 
 ENV INSFORGE_DB_PATH=/data/forgecloud.sqlite
 
