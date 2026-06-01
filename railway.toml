@@ -1,0 +1,12 @@
+# Railway build configuration.
+# Picked up automatically by Railway; prefer this file over railway.json when both exist.
+
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "node server-entry.mjs"
+healthcheckPath = "/"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

@@ -1,0 +1,19 @@
+# Nixpacks build configuration for Railway.
+# Tells Nixpacks to use Bun for install/build, then run the production server with Node.
+
+[phases.setup]
+nixPkgs = ["nodejs_20", "bun"]
+
+[phases.install]
+cmds = ["bun install --frozen-lockfile"]
+
+[phases.build]
+cmds = ["bun run build"]
+
+[start]
+cmd = "node server-entry.mjs"
+
+[variables]
+# Nixpacks will set PORT automatically; expose it for the start script.
+PORT = "3000"
+NODE_ENV = "production"

@@ -1,0 +1,125 @@
+// Node.js HTTP server adapter for Railway.
+// Wraps the Nitro/TanStack Start fetch handler (dist/server/server.js) into a
+// plain Node HTTP server that listens on PORT (Railway provides this env var).
+//
+// Usage:  node server-entry.mjs
+// or:     bun run server-entry.mjs
+
+import { createServer } from "node:http";
+import { readFile, stat } from "node:fs/promises";
+import { extname, join, normalize, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const CLIENT_DIR = resolve(__dirname, "dist", "client");
+const PORT = Number(process.env.PORT ?? 3000);
+const HOST = process.env.HOST ?? "0.0.0.0";
+
+const MIME = {
+  ".html": "text/html; charset=utf-8",
+  ".js":   "application/javascript; charset=utf-8",
+  ".mjs":  "application/javascript; charset=utf-8",
+  ".css":  "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg":  "image/svg+xml",
+  ".png":  "image/png",
+  ".jpg":  "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif":  "image/gif",
+  ".webp": "image/webp",
+  ".ico":  "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2":"font/woff2",
+  ".ttf":  "font/ttf",
+  ".txt":  "text/plain; charset=utf-8",
+  ".map":  "application/json; charset=utf-8",
+};
+
+// Load the SSR fetch handler from the Nitro build output.
+const { default: serverEntry } = await import("./dist/server/server.js");
+
+// Serve static client assets directly (the fetch handler is SSR-only).
+async function serveStatic(req, res) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  let pathname = decodeURIComponent(url.pathname);
+
+  // Map "/" -> "/index.html"
+  if (pathname === "/" || pathname === "") pathname = "/index.html";
+
+  // Prevent path traversal — resolve and ensure the result stays in CLIENT_DIR.
+  const filePath = normalize(join(CLIENT_DIR, pathname));
+  if (!filePath.startsWith(CLIENT_DIR + "/") && filePath !== CLIENT_DIR) {
+    return false;
+  }
+
+  try {
+    const s = await stat(filePath);
+    if (!s.isFile()) return false;
+  } catch {
+    return false;
+  }
+
+  const ext = extname(filePath).toLowerCase();
+  const contentType = MIME[ext] ?? "application/octet-stream";
+  const body = await readFile(filePath);
+  res.writeHead(200, {
+    "content-type": contentType,
+    "content-length": body.length,
+    "cache-control": ext === ".html" ? "no-cache" : "public, max-age=31536000, immutable",
+  });
+  res.end(body);
+  return true;
+}
+
+// Convert an incoming Node HTTP request into a Fetch Request and run it
+// through the Nitro/TanStack Start handler.
+const server = createServer(async (req, res) => {
+  try {
+    // Try static asset first (faster, offloads the SSR runtime).
+    if (await serveStatic(req, res)) return;
+
+    // Fall through to the SSR fetch handler for everything else (pages, API, server fns).
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const body = chunks.length ? Buffer.concat(chunks) : undefined;
+
+    const headers = new Headers();
+    for (const [key, value] of Object.entries(req.headers)) {
+      if (value === undefined) continue;
+      if (Array.isArray(value)) headers.set(key, value.join(", "));
+      else headers.set(key, value);
+    }
+
+    const protocol = req.headers["x-forwarded-proto"] ?? "http";
+    const host = req.headers["x-forwarded-host"] ?? req.headers.host;
+    const url = `${protocol}://${host}${req.url}`;
+
+    const fetchRequest = new Request(url, {
+      method: req.method,
+      headers,
+      body: body && req.method !== "GET" && req.method !== "HEAD" ? body : undefined,
+      duplex: "half",
+    });
+
+    const response = await serverEntry.fetch(fetchRequest, process.env, {});
+
+    res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+    if (response.body) {
+      const reader = response.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        res.write(Buffer.from(value));
+      }
+    }
+    res.end();
+  } catch (err) {
+    console.error("[server-entry] request failed:", err);
+    res.writeHead(500, { "content-type": "text/plain" });
+    res.end("Internal Server Error");
+  }
+});
+
+server.listen(PORT, HOST, () => {
+  console.log(`[server-entry] ForgeCloud listening on http://${HOST}:${PORT}`);
+});
