@@ -38,6 +38,16 @@ const MIME = {
 // Load the SSR fetch handler from the Nitro build output.
 const { default: serverEntry } = await import("./dist/server/server.js");
 
+// Load the plain HTTP API handler (bypasses the broken createServerFn / Seroval).
+// Built by `npm run build:api` (esbuild) from src/server/api-handler.ts.
+let handleApiRequest = null;
+try {
+  const apiModule = await import("./dist/server/api-handler.mjs");
+  handleApiRequest = apiModule.handleApiRequest;
+} catch (err) {
+  console.warn("[server-entry] API handler not loaded (run `npm run build:api`):", err?.message);
+}
+
 // Serve static client assets directly (the fetch handler is SSR-only).
 async function serveStatic(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -77,6 +87,14 @@ const server = createServer(async (req, res) => {
   try {
     // Try static asset first (faster, offloads the SSR runtime).
     if (await serveStatic(req, res)) return;
+
+    // Route plain /api/* requests to the new HTTP API handler.
+    // This bypasses the broken createServerFn / Seroval serialization.
+    const requestUrl = req.url ?? "";
+    if (requestUrl.startsWith("/api/") && handleApiRequest) {
+      const handled = await handleApiRequest(req, res);
+      if (handled) return;
+    }
 
     // Fall through to the SSR fetch handler for everything else (pages, API, server fns).
     const chunks = [];

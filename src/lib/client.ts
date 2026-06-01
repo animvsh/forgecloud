@@ -1,37 +1,34 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  addPreviewComment,
-  decideApprovalFn,
-  deployPr,
-  deployProduction,
-  getAgentsFn,
-  getApprovals,
-  getChanges,
-  getChat,
-  getDeployments,
-  getFailureFeed,
-  getInitialState,
-  getPrsFn,
-  getTasksFn,
-  getTeam,
-  injectFailure,
-  resetProject,
-  runAllTasks,
-  runFullDemo,
-  runNextTask,
-  runTask,
-  sendChat,
-  skipToDemo,
-  startProjectIntake,
-  approvePrFn,
-} from "./api";
 
 const POLL_INTERVAL = 2500;
+
+// Plain HTTP API client. The TanStack Start `createServerFn` system is broken in
+// this version (Seroval serialization bug), so all server calls go through
+// fetch() against `/api/*` endpoints handled by `src/server/api-handler.ts`.
+
+async function apiGet<T>(path: string): Promise<T> {
+  const res = await fetch(path, { method: "GET" });
+  if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
+  return (await res.json()) as T;
+}
+
+async function apiPost<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`POST ${path} failed: ${res.status} ${text}`);
+  }
+  return (await res.json()) as T;
+}
 
 export function useForgeState() {
   return useQuery({
     queryKey: ["forge-state"],
-    queryFn: () => getInitialState(),
+    queryFn: () => apiGet<any>("/api/state"),
     refetchInterval: POLL_INTERVAL,
     refetchOnWindowFocus: true,
   });
@@ -40,7 +37,7 @@ export function useForgeState() {
 export function useSendChat() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { message: string }) => sendChat({ data: vars.message }),
+    mutationFn: (vars: { message: string }) => apiPost<any>("/api/chat", vars),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }
@@ -48,8 +45,7 @@ export function useSendChat() {
 export function useStartIntake() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: Parameters<typeof startProjectIntake>[0]["data"]) =>
-      startProjectIntake({ data: input }),
+    mutationFn: (input: any) => apiPost<any>("/api/intake", input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }
@@ -58,7 +54,7 @@ export function useRunTask() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (vars: { taskId: string; failureType?: string }) =>
-      runTask({ data: vars }),
+      apiPost<any>("/api/run-task", vars),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }
@@ -67,16 +63,7 @@ export function useRunAllTasks() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (vars: { failureAt?: number; failureType?: string } = {}) =>
-      runAllTasks({ data: vars }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
-  });
-}
-
-export function useRunNext() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (failureType?: string) =>
-      runNextTask({ data: failureType ? { failureType } : undefined }),
+      apiPost<any>("/api/run-all", vars),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }
@@ -84,8 +71,8 @@ export function useRunNext() {
 export function useInjectFailure() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (type: Parameters<typeof injectFailure>[0]["data"]) =>
-      injectFailure({ data: type }),
+    mutationFn: (input: { type: string; message?: string }) =>
+      apiPost<any>("/api/inject-failure", input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }
@@ -93,8 +80,11 @@ export function useInjectFailure() {
 export function useDecideApproval() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { approvalId: string; decision: "approve" | "reject" }) =>
-      decideApprovalFn({ data: vars }),
+    mutationFn: (vars: {
+      approvalId: string;
+      decision: "approve" | "reject";
+      approverName?: string;
+    }) => apiPost<any>("/api/approval", vars),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }
@@ -102,7 +92,8 @@ export function useDecideApproval() {
 export function useApprovePr() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (prId: string) => approvePrFn({ data: { prId } }),
+    mutationFn: (vars: { prId: string; approverName?: string }) =>
+      apiPost<any>("/api/approve-pr", vars),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }
@@ -110,8 +101,8 @@ export function useApprovePr() {
 export function useDeploy() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { environment?: "preview" | "staging" | "production" } = {}) =>
-      deployPr({ data: vars }),
+    mutationFn: (vars: { prId?: string; environment?: "preview" | "staging" | "production" } = {}) =>
+      apiPost<any>("/api/deploy", vars),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }
@@ -119,7 +110,8 @@ export function useDeploy() {
 export function useDeployProduction() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (fail: boolean) => deployProduction({ data: { fail } }),
+    mutationFn: (vars: { fail?: boolean } = {}) =>
+      apiPost<any>("/api/deploy-production", vars),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }
@@ -127,7 +119,7 @@ export function useDeployProduction() {
 export function useResetProject() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => resetProject(),
+    mutationFn: () => apiPost<any>("/api/reset", {}),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }
@@ -135,7 +127,7 @@ export function useResetProject() {
 export function useRunFullDemo() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => runFullDemo(),
+    mutationFn: () => apiPost<any>("/api/run-full-demo", {}),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }
@@ -143,7 +135,7 @@ export function useRunFullDemo() {
 export function useSkipToDemo() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => skipToDemo(),
+    mutationFn: () => apiPost<any>("/api/skip-to-demo", {}),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }
@@ -152,17 +144,7 @@ export function useAddComment() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (vars: { text: string; selector?: string }) =>
-      addPreviewComment({ data: vars }),
+      apiPost<any>("/api/comment", vars),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }
-
-void getAgentsFn;
-void getApprovals;
-void getChanges;
-void getChat;
-void getDeployments;
-void getFailureFeed;
-void getPrsFn;
-void getTasksFn;
-void getTeam;

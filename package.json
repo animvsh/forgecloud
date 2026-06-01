@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build",
+    "build": "vite build && npm run build:api",
+    "build:api": "esbuild src/server/api-handler.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/server/api-handler.mjs --external:better-sqlite3",
     "build:dev": "vite build --mode development",
     "start": "node server-entry.mjs",
     "preview": "vite preview",
