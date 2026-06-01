@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { existsSync, mkdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 
 const DB_PATH = process.env.INSFORGE_DB_PATH
@@ -8,10 +9,15 @@ const DB_PATH = process.env.INSFORGE_DB_PATH
 
 let _db: Database.Database | null = null;
 
+// Use createRequire to load the native module from a CJS context.
+// Top-level await with a dynamic import would force this module to be async,
+// which would ripple through every call site that imports it.
+const nodeRequire = createRequire(typeof __filename !== "undefined" ? __filename : import.meta.url);
+
 export function getDb(): Database.Database {
   if (_db) return _db;
   // Dynamic require so client bundles never see the native module.
-  const DatabaseCtor = require("better-sqlite3") as typeof import("better-sqlite3");
+  const DatabaseCtor = nodeRequire("better-sqlite3") as typeof import("better-sqlite3");
   if (!existsSync(dirname(DB_PATH))) {
     mkdirSync(dirname(DB_PATH), { recursive: true });
   }
