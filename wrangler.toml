@@ -1,0 +1,19 @@
+name = "forgecloud-palembang"
+compatibility_date = "2024-12-01"
+pages_build_output_dir = "dist/client"
+
+# Cloudflare Pages project configuration.
+#
+# IMPORTANT: This app's server-side functions depend on `better-sqlite3`,
+# a native Node.js module that CANNOT run on the Cloudflare Workers/Pages
+# runtime (no Node.js native bindings, no filesystem, no persistent storage).
+#
+# This `wrangler.toml` only configures STATIC ASSET serving from `dist/client`.
+# For full-stack deployment, see CLOUDFLARE_DEPLOY.md for the recommended
+# Railway path (better-sqlite3 + persistent volume) or the D1 migration plan.
+#
+# If you split the app (frontend here, backend on Railway), point the frontend
+# at the backend URL via the VITE_API_BASE env var in the Cloudflare dashboard.
+
+[build]
+command = "bun run build"
