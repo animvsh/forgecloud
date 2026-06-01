@@ -2,7 +2,7 @@
 # Tells Nixpacks to use Bun for install/build, then run the production server with Node.
 
 [phases.setup]
-nixPkgs = ["nodejs_20", "bun"]
+nixPkgs = ["nodejs_20", "bun", "python311", "gcc", "g++", "make", "pkg-config"]
 
 [phases.install]
 cmds = ["bun install --frozen-lockfile"]
