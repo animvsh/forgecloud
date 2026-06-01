@@ -1,47 +1,169 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ScreenHeader } from "@/components/ScreenHeader";
-import { Sparkles, Palette, Code2, Database, Bug, Rocket, ShieldCheck } from "lucide-react";
+import { Bot, Loader2 } from "lucide-react";
+import { useForgeState } from "@/lib/client";
+import type { Agent } from "@/lib/db";
 
 export const Route = createFileRoute("/app/agents")({
   component: AgentsScreen,
 });
 
-const agents = [
-  { name: "Product Agent", job: "Turns ideas into tasks", working: "CRM v1 backlog", status: "Planning", update: "Drafted 8 tasks from your brief", icon: Sparkles, color: "var(--amber)" },
-  { name: "Design Agent", job: "Creates the UI", working: "Lead dashboard layout", status: "Designing", update: "Picked clean Notion-style theme", icon: Palette, color: "var(--sky)" },
-  { name: "Frontend Agent", job: "Builds pages", working: "Lead dashboard", status: "Building", update: "Created dashboard table and filter bar", icon: Code2, color: "var(--violet)" },
-  { name: "Backend Agent", job: "Builds APIs & data", working: "Leads table", status: "Building", update: "Wrote schema for leads + notes", icon: Database, color: "var(--mint)" },
-  { name: "QA Agent", job: "Tests the app", working: "Add lead form", status: "Testing", update: "Found 1 validation bug, opened task", icon: Bug, color: "var(--coral)" },
-  { name: "DevOps Agent", job: "Deploys safely", working: "Preview env", status: "Ready", update: "Preview deployed to /preview", icon: Rocket, color: "var(--violet)" },
-  { name: "Safety Agent", job: "Blocks risky changes", working: "DB migration check", status: "Watching", update: "Flagged 1 change for approval", icon: ShieldCheck, color: "var(--coral)" },
-];
+const typeColors: Record<string, string> = {
+  product: "var(--violet)",
+  design: "var(--coral)",
+  frontend: "var(--sky)",
+  backend: "var(--mint)",
+  auth: "var(--amber)",
+  qa: "var(--sky)",
+  devops: "var(--mint)",
+  safety: "var(--amber)",
+  recovery: "var(--violet)",
+};
+
+const typeIcons: Record<string, string> = {
+  product: "💡",
+  design: "🎨",
+  frontend: "🎨",
+  backend: "🛠",
+  auth: "🔐",
+  qa: "🧪",
+  devops: "🚀",
+  safety: "🛡",
+  recovery: "♻️",
+};
 
 function AgentsScreen() {
+  const { data, isLoading } = useForgeState();
+
+  if (isLoading || !data) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const agents = data.agents;
+  const tasks = data.tasks;
+  const working = agents.filter((a) => a.status === "working").length;
+  const idle = agents.filter((a) => a.status === "idle").length;
+
   return (
-    <div>
-      <ScreenHeader title="Agents" subtitle="Your AI team and what each one is doing right now." />
-      <div className="grid gap-4 p-8 md:grid-cols-2 xl:grid-cols-3">
-        {agents.map((a) => (
-          <div key={a.name} className="rounded-3xl border border-border bg-card p-6">
-            <div className="flex items-start gap-4">
-              <div className="squircle grid size-12 place-items-center text-white" style={{ background: a.color }}>
-                <a.icon className="size-5" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <div className="font-semibold">{a.name}</div>
-                  <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium">{a.status}</span>
-                </div>
-                <div className="text-xs text-muted-foreground">{a.job}</div>
-              </div>
-            </div>
-            <div className="mt-5 space-y-2 text-sm">
-              <div><span className="text-muted-foreground">Working on:</span> {a.working}</div>
-              <div><span className="text-muted-foreground">Last update:</span> {a.update}</div>
-            </div>
+    <div className="min-h-screen">
+      <ScreenHeader
+        title="Agent team"
+        subtitle={`${agents.length} agents · ${working} working · ${idle} idle`}
+      />
+
+      <div className="p-8">
+        {agents.length === 0 ? (
+          <div className="rounded-3xl border-2 border-dashed border-border bg-card p-10 text-center">
+            <Bot className="mx-auto size-10 text-muted-foreground" />
+            <p className="mt-4 text-muted-foreground">No agents yet. Start a project to spin up the team.</p>
           </div>
-        ))}
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {agents.map((a) => (
+              <AgentCard key={a.id} agent={a} tasks={tasks} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+function AgentCard({ agent, tasks }: { agent: Agent; tasks: { title: string; status: string; id: string }[] }) {
+  const currentTask = tasks.find((t) => t.id === agent.current_task_id);
+  const recent = tasks.filter((t) => t.assigned_agent_id === agent.id).slice(0, 3);
+  const permissions: { allowed: string[]; needsApproval: string[] } = (() => {
+    try { return JSON.parse(agent.permissions); } catch { return { allowed: [], needsApproval: [] }; }
+  })();
+
+  return (
+    <div className="rounded-3xl border border-border bg-card p-5">
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-3">
+          <div
+            className="flex size-10 items-center justify-center rounded-xl text-lg"
+            style={{ background: `${typeColors[agent.type] ?? "var(--violet)"}20` }}
+          >
+            {typeIcons[agent.type] ?? "🤖"}
+          </div>
+          <div>
+            <div className="font-semibold">{agent.name}</div>
+            <div className="text-xs text-muted-foreground">{agent.role}</div>
+          </div>
+        </div>
+        <StatusPill status={agent.status} />
+      </div>
+
+      <div className="mt-4 space-y-2 text-xs">
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">Model</span>
+          <span className="font-mono">{agent.model_primary.replace("claude-", "")}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">Fallback</span>
+          <span className="font-mono">{agent.model_fallback.replace("claude-", "")}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">Retries</span>
+          <span className="font-mono">{agent.retry_count}</span>
+        </div>
+      </div>
+
+      {agent.last_action && (
+        <div className="mt-4 rounded-xl border border-border bg-background p-3 text-xs">
+          <div className="text-muted-foreground">Last action</div>
+          <div className="mt-1">{agent.last_action}</div>
+        </div>
+      )}
+
+      {currentTask && (
+        <div className="mt-3 rounded-xl border border-brand/30 bg-brand/5 p-3 text-xs">
+          <div className="text-brand">Working on</div>
+          <div className="mt-1 font-medium">{currentTask.title}</div>
+        </div>
+      )}
+
+      {recent.length > 0 && (
+        <div className="mt-3">
+          <div className="text-xs text-muted-foreground">Recent</div>
+          <div className="mt-1 space-y-1">
+            {recent.map((t) => (
+              <div key={t.id} className="flex items-center gap-2 text-xs">
+                <span className={`size-1.5 rounded-full ${t.status === "done" ? "bg-mint" : t.status === "review" ? "bg-amber" : "bg-sky"}`} />
+                <span className="line-clamp-1">{t.title}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {permissions.needsApproval.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1">
+          {permissions.needsApproval.map((p) => (
+            <span key={p} className="rounded-full bg-amber/15 px-2 py-0.5 text-[10px] text-amber">
+              {p.replace(/_/g, " ")}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatusPill({ status }: { status: string }) {
+  const colors: Record<string, string> = {
+    idle: "bg-muted text-muted-foreground",
+    working: "bg-sky/20 text-sky",
+    waiting: "bg-amber/20 text-amber",
+    error: "bg-coral/20 text-coral",
+  };
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${colors[status] ?? "bg-muted"}`}>
+      {status}
+    </span>
   );
 }

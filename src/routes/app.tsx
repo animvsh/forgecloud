@@ -1,25 +1,37 @@
 import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
-import { MessageSquare, Bot, ListChecks, Eye, GitBranch, ShieldAlert } from "lucide-react";
+import { MessageSquare, Bot, ListChecks, Eye, GitBranch, ShieldAlert, Rocket, Users, FileText, Home } from "lucide-react";
+import { useForgeState } from "@/lib/client";
 
 export const Route = createFileRoute("/app")({
   component: AppLayout,
 });
 
 const nav = [
+  { to: "/app/index", label: "Home", icon: Home },
   { to: "/app/chat", label: "Chat", icon: MessageSquare },
   { to: "/app/agents", label: "Agents", icon: Bot },
   { to: "/app/tasks", label: "Tasks", icon: ListChecks },
-  { to: "/app/preview", label: "Preview", icon: Eye },
   { to: "/app/changes", label: "Changes", icon: GitBranch },
+  { to: "/app/preview", label: "Preview", icon: Eye },
+  { to: "/app/deployments", label: "Deployments", icon: Rocket },
   { to: "/app/failures", label: "Failures", icon: ShieldAlert },
+  { to: "/app/team", label: "Team", icon: Users },
+  { to: "/app/report", label: "Report", icon: FileText },
 ] as const;
 
 function AppLayout() {
   const { pathname } = useLocation();
+  const { data } = useForgeState();
+  const tasks = data?.tasks ?? [];
+  const done = tasks.filter((t) => t.status === "done").length;
+  const total = tasks.length;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  const pendingApprovals = (data?.approvals ?? []).length;
+
   return (
     <div className="flex min-h-screen bg-background">
       <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-card p-4">
-        <Link to="/" className="mb-8 flex items-center gap-2 px-2 py-1 font-semibold">
+        <Link to="/" className="mb-6 flex items-center gap-2 px-2 py-1 font-semibold">
           <span className="inline-block size-5 rounded-md bg-foreground" />
           ForgeCloud
         </Link>
@@ -37,15 +49,22 @@ function AppLayout() {
               >
                 <n.icon className="size-4" />
                 {n.label}
+                {n.label === "Failures" && pendingApprovals > 0 && (
+                  <span className="ml-auto rounded-full bg-coral px-2 py-0.5 text-[10px] font-semibold text-white">
+                    {pendingApprovals}
+                  </span>
+                )}
               </Link>
             );
           })}
         </nav>
         <div className="mt-auto rounded-2xl border border-border bg-background p-3">
-          <div className="text-xs font-medium">CRM v1 project</div>
-          <div className="mt-1 text-xs text-muted-foreground">Building — 72%</div>
+          <div className="text-xs font-medium">{data?.project?.name ?? "Untitled Project"}</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {total === 0 ? "Not started" : `Building — ${pct}%`}
+          </div>
           <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-            <div className="h-full w-[72%] bg-brand" />
+            <div className="h-full bg-brand transition-all" style={{ width: `${pct}%` }} />
           </div>
         </div>
       </aside>

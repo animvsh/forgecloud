@@ -1,110 +1,247 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { ScreenHeader } from "@/components/ScreenHeader";
-import { ArrowUp, Sparkles, Check } from "lucide-react";
-import { useState } from "react";
+import { ArrowUp, Sparkles, AlertTriangle, Loader2, Bot } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { useForgeState, useSendChat } from "@/lib/client";
 
 export const Route = createFileRoute("/app/chat")({
   component: ChatScreen,
 });
 
-const plan = [
-  { feature: "Lead dashboard", desc: "View all leads", agent: "Product Agent" },
-  { feature: "Add lead form", desc: "Add new lead info", agent: "Frontend Agent" },
-  { feature: "Notes section", desc: "Track conversations", agent: "Backend Agent" },
-  { feature: "Follow-up reminders", desc: "Remind sales team", agent: "Ops Agent" },
-  { feature: "Login page", desc: "Team access", agent: "Auth Agent" },
+const DEMO_PROMPTS = [
+  "Build a simple CRM for my sales team",
+  "Build a waitlist app for my new product",
+  "Build an internal tool for tracking job applications",
 ];
 
 function ChatScreen() {
+  const { data, isLoading } = useForgeState();
+  const send = useSendChat();
   const [input, setInput] = useState("");
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [data?.chatMessages?.length]);
+
+  const hasProject = (data?.tasks?.length ?? 0) > 0;
+
+  async function handleSend(text: string) {
+    if (!text.trim() || send.isPending) return;
+    setInput("");
+    await send.mutateAsync({ message: text });
+  }
+
   return (
     <div className="flex h-screen flex-col">
-      <ScreenHeader title="Chat" subtitle="Describe what to build. Your AI team takes it from here." />
-      <div className="flex-1 overflow-y-auto px-8 py-8">
+      <ScreenHeader
+        title="Chat"
+        subtitle="Describe what to build. Your AI team takes it from here."
+        action={
+          data && !data.aiAvailable ? (
+            <span className="rounded-full border border-amber bg-amber/10 px-3 py-1 text-xs text-amber">
+              <AlertTriangle className="mr-1 inline size-3" />
+              Fallback AI mode
+            </span>
+          ) : null
+        }
+      />
+
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-8 py-8">
         <div className="mx-auto max-w-3xl space-y-6">
-          <Message who="You">Build the first version of the CRM for my sales team.</Message>
-          <Message who="ForgeCloud" agent>
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <Sparkles className="size-4 text-brand" />
-              I created a plan. Review before I start building.
+          {isLoading && (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="size-6 animate-spin text-muted-foreground" />
             </div>
-            <div className="mt-4 overflow-hidden rounded-2xl border border-border">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/60 text-left text-xs uppercase tracking-wider text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-3">Feature</th>
-                    <th className="px-4 py-3">Description</th>
-                    <th className="px-4 py-3">Agent</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {plan.map((p) => (
-                    <tr key={p.feature} className="border-t border-border">
-                      <td className="px-4 py-3 font-medium">{p.feature}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{p.desc}</td>
-                      <td className="px-4 py-3">{p.agent}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          )}
+
+          {data && data.chatMessages.length === 0 && !hasProject && (
+            <div className="rounded-3xl border-2 border-dashed border-border bg-card p-8 text-center">
+              <Sparkles className="mx-auto size-8 text-brand" />
+              <h2 className="mt-3 text-xl font-semibold">What do you want to build?</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Type any product idea. The Product Agent will turn it into a build plan.
+              </p>
+              <div className="mt-6 grid gap-2 sm:grid-cols-3">
+                {DEMO_PROMPTS.map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => handleSend(p)}
+                    className="rounded-2xl border border-border bg-background p-4 text-left text-sm hover:border-brand"
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button className="inline-flex items-center gap-2 rounded-full bg-brand px-4 py-2 text-sm font-medium text-brand-foreground">
-                <Check className="size-4" /> Approve plan
-              </button>
-              <button className="rounded-full border border-border px-4 py-2 text-sm font-medium hover:bg-muted">
-                Edit plan
-              </button>
-              <button className="rounded-full border border-border px-4 py-2 text-sm font-medium hover:bg-muted">
-                Add feature
-              </button>
+          )}
+
+          {data && hasProject && data.chatMessages.length === 0 && (
+            <div className="rounded-3xl border-2 border-dashed border-border bg-card p-6 text-center">
+              <p className="text-sm text-muted-foreground">
+                The project has started. Ask for a new feature or check progress.
+              </p>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                <button
+                  onClick={() => handleSend("Add a phone number field to the lead form")}
+                  className="rounded-xl border border-border bg-background p-3 text-left text-xs hover:border-brand"
+                >
+                  Add a phone number field to the lead form
+                </button>
+                <button
+                  onClick={() => handleSend("Add a search bar to the dashboard")}
+                  className="rounded-xl border border-border bg-background p-3 text-left text-xs hover:border-brand"
+                >
+                  Add a search bar to the dashboard
+                </button>
+              </div>
             </div>
-          </Message>
+          )}
+
+          {data?.chatMessages.map((m) => {
+            if (m.role === "user") {
+              return (
+                <div key={m.id} className="flex justify-end">
+                  <div className="max-w-xl rounded-3xl bg-foreground px-5 py-3 text-background">
+                    {m.content}
+                  </div>
+                </div>
+              );
+            }
+            const meta = m.metadata ? (() => {
+              try { return JSON.parse(m.metadata); } catch { return null; }
+            })() : null;
+            if (meta?.kind === "plan") {
+              const plan = meta.plan;
+              return (
+                <div key={m.id} className="space-y-3">
+                  <Message from="ForgeCloud">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <Sparkles className="size-4 text-brand" />
+                      I created a plan. Review before I start building.
+                    </div>
+                    <div className="mt-3 text-sm text-muted-foreground">{plan.summary}</div>
+                    <div className="mt-3 overflow-hidden rounded-2xl border border-border">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/60 text-left text-xs uppercase tracking-wider text-muted-foreground">
+                          <tr>
+                            <th className="px-4 py-3">Feature</th>
+                            <th className="px-4 py-3">Description</th>
+                            <th className="px-4 py-3">Agent</th>
+                            <th className="px-4 py-3">Risk</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {plan.features.map((f: { title: string; description: string; ownerAgent: string; riskLevel: string }, i: number) => (
+                            <tr key={i} className="border-t border-border">
+                              <td className="px-4 py-3 font-medium">{f.title}</td>
+                              <td className="px-4 py-3 text-muted-foreground">{f.description}</td>
+                              <td className="px-4 py-3">{f.ownerAgent}</td>
+                              <td className="px-4 py-3">
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${riskColor(f.riskLevel)}`}>
+                                  {f.riskLevel}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Link
+                        to="/app/tasks"
+                        className="inline-flex items-center gap-1.5 rounded-full bg-brand px-4 py-2 text-xs font-medium text-brand-foreground"
+                      >
+                        Approve & start building
+                      </Link>
+                      <Link
+                        to="/app/agents"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-xs hover:bg-muted"
+                      >
+                        See the team
+                      </Link>
+                    </div>
+                  </Message>
+                </div>
+              );
+            }
+            if (meta?.kind === "secret_block") {
+              return (
+                <Message key={m.id} from="Safety Agent">
+                  <div className="flex items-start gap-2 text-sm">
+                    <AlertTriangle className="mt-0.5 size-4 text-coral" />
+                    <div>
+                      <div className="font-medium text-coral">Blocked</div>
+                      <div className="mt-1 text-muted-foreground">{m.content}</div>
+                    </div>
+                  </div>
+                </Message>
+              );
+            }
+            return <Message key={m.id} from="ForgeCloud">{m.content}</Message>;
+          })}
+
+          {send.isPending && (
+            <Message from="ForgeCloud">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" /> Thinking...
+              </div>
+            </Message>
+          )}
         </div>
       </div>
-      <div className="border-t border-border bg-card px-8 py-5">
-        <form
-          onSubmit={(e) => { e.preventDefault(); setInput(""); }}
-          className="mx-auto flex max-w-3xl items-center gap-2 rounded-full border border-border bg-background px-2 py-1.5"
-        >
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Describe a feature or change…"
-            className="flex-1 bg-transparent px-4 py-2 text-sm outline-none"
-          />
-          <button className="grid size-9 place-items-center rounded-full bg-foreground text-background">
-            <ArrowUp className="size-4" />
-          </button>
-        </form>
+
+      <div className="border-t border-border bg-card px-8 py-4">
+        <div className="mx-auto max-w-3xl">
+          <form
+            onSubmit={(e) => { e.preventDefault(); handleSend(input); }}
+            className="flex items-end gap-2"
+          >
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend(input);
+                }
+              }}
+              placeholder="Describe what to build next. The AI team handles the rest."
+              className="flex-1 resize-none rounded-2xl border border-border bg-background px-4 py-3 outline-none focus:border-brand"
+              rows={2}
+            />
+            <button
+              type="submit"
+              disabled={!input.trim() || send.isPending}
+              className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground text-background hover:opacity-90 disabled:opacity-30"
+            >
+              <ArrowUp className="size-5" />
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );
 }
 
-function Message({
-  who,
-  agent,
-  children,
-}: {
-  who: string;
-  agent?: boolean;
-  children: React.ReactNode;
-}) {
+function Message({ from, children }: { from: string; children: React.ReactNode }) {
   return (
     <div className="flex gap-3">
-      <div
-        className={`squircle mt-0.5 grid size-9 shrink-0 place-items-center text-xs font-semibold ${
-          agent ? "text-white" : "bg-muted text-foreground"
-        }`}
-        style={agent ? { background: "var(--violet)" } : undefined}
-      >
-        {agent ? "FC" : who[0]}
+      <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-violet/15 text-violet">
+        <Bot className="size-4" />
       </div>
-      <div className="flex-1">
-        <div className="text-xs text-muted-foreground">{who}</div>
-        <div className="mt-1 rounded-2xl bg-card border border-border p-4">{children}</div>
+      <div className="flex-1 rounded-3xl border border-border bg-card p-5 text-sm">
+        <div className="text-xs text-muted-foreground">{from}</div>
+        <div className="mt-1">{children}</div>
       </div>
     </div>
   );
+}
+
+function riskColor(level: string) {
+  if (level === "high") return "bg-coral/20 text-coral";
+  if (level === "med") return "bg-amber/20 text-amber";
+  return "bg-mint/20 text-mint";
 }

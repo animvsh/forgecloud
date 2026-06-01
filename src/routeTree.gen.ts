@@ -12,9 +12,13 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppIndexRouteImport } from './routes/app.index'
+import { Route as AppTeamRouteImport } from './routes/app.team'
 import { Route as AppTasksRouteImport } from './routes/app.tasks'
+import { Route as AppReportRouteImport } from './routes/app.report'
 import { Route as AppPreviewRouteImport } from './routes/app.preview'
+import { Route as AppIntakeRouteImport } from './routes/app.intake'
 import { Route as AppFailuresRouteImport } from './routes/app.failures'
+import { Route as AppDeploymentsRouteImport } from './routes/app.deployments'
 import { Route as AppChatRouteImport } from './routes/app.chat'
 import { Route as AppChangesRouteImport } from './routes/app.changes'
 import { Route as AppAgentsRouteImport } from './routes/app.agents'
@@ -34,9 +38,19 @@ const AppIndexRoute = AppIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppTeamRoute = AppTeamRouteImport.update({
+  id: '/team',
+  path: '/team',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppTasksRoute = AppTasksRouteImport.update({
   id: '/tasks',
   path: '/tasks',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppReportRoute = AppReportRouteImport.update({
+  id: '/report',
+  path: '/report',
   getParentRoute: () => AppRoute,
 } as any)
 const AppPreviewRoute = AppPreviewRouteImport.update({
@@ -44,9 +58,19 @@ const AppPreviewRoute = AppPreviewRouteImport.update({
   path: '/preview',
   getParentRoute: () => AppRoute,
 } as any)
+const AppIntakeRoute = AppIntakeRouteImport.update({
+  id: '/intake',
+  path: '/intake',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppFailuresRoute = AppFailuresRouteImport.update({
   id: '/failures',
   path: '/failures',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDeploymentsRoute = AppDeploymentsRouteImport.update({
+  id: '/deployments',
+  path: '/deployments',
   getParentRoute: () => AppRoute,
 } as any)
 const AppChatRoute = AppChatRouteImport.update({
@@ -71,9 +95,13 @@ export interface FileRoutesByFullPath {
   '/app/agents': typeof AppAgentsRoute
   '/app/changes': typeof AppChangesRoute
   '/app/chat': typeof AppChatRoute
+  '/app/deployments': typeof AppDeploymentsRoute
   '/app/failures': typeof AppFailuresRoute
+  '/app/intake': typeof AppIntakeRoute
   '/app/preview': typeof AppPreviewRoute
+  '/app/report': typeof AppReportRoute
   '/app/tasks': typeof AppTasksRoute
+  '/app/team': typeof AppTeamRoute
   '/app/': typeof AppIndexRoute
 }
 export interface FileRoutesByTo {
@@ -81,9 +109,13 @@ export interface FileRoutesByTo {
   '/app/agents': typeof AppAgentsRoute
   '/app/changes': typeof AppChangesRoute
   '/app/chat': typeof AppChatRoute
+  '/app/deployments': typeof AppDeploymentsRoute
   '/app/failures': typeof AppFailuresRoute
+  '/app/intake': typeof AppIntakeRoute
   '/app/preview': typeof AppPreviewRoute
+  '/app/report': typeof AppReportRoute
   '/app/tasks': typeof AppTasksRoute
+  '/app/team': typeof AppTeamRoute
   '/app': typeof AppIndexRoute
 }
 export interface FileRoutesById {
@@ -93,9 +125,13 @@ export interface FileRoutesById {
   '/app/agents': typeof AppAgentsRoute
   '/app/changes': typeof AppChangesRoute
   '/app/chat': typeof AppChatRoute
+  '/app/deployments': typeof AppDeploymentsRoute
   '/app/failures': typeof AppFailuresRoute
+  '/app/intake': typeof AppIntakeRoute
   '/app/preview': typeof AppPreviewRoute
+  '/app/report': typeof AppReportRoute
   '/app/tasks': typeof AppTasksRoute
+  '/app/team': typeof AppTeamRoute
   '/app/': typeof AppIndexRoute
 }
 export interface FileRouteTypes {
@@ -106,9 +142,13 @@ export interface FileRouteTypes {
     | '/app/agents'
     | '/app/changes'
     | '/app/chat'
+    | '/app/deployments'
     | '/app/failures'
+    | '/app/intake'
     | '/app/preview'
+    | '/app/report'
     | '/app/tasks'
+    | '/app/team'
     | '/app/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -116,9 +156,13 @@ export interface FileRouteTypes {
     | '/app/agents'
     | '/app/changes'
     | '/app/chat'
+    | '/app/deployments'
     | '/app/failures'
+    | '/app/intake'
     | '/app/preview'
+    | '/app/report'
     | '/app/tasks'
+    | '/app/team'
     | '/app'
   id:
     | '__root__'
@@ -127,9 +171,13 @@ export interface FileRouteTypes {
     | '/app/agents'
     | '/app/changes'
     | '/app/chat'
+    | '/app/deployments'
     | '/app/failures'
+    | '/app/intake'
     | '/app/preview'
+    | '/app/report'
     | '/app/tasks'
+    | '/app/team'
     | '/app/'
   fileRoutesById: FileRoutesById
 }
@@ -161,11 +209,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/team': {
+      id: '/app/team'
+      path: '/team'
+      fullPath: '/app/team'
+      preLoaderRoute: typeof AppTeamRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/tasks': {
       id: '/app/tasks'
       path: '/tasks'
       fullPath: '/app/tasks'
       preLoaderRoute: typeof AppTasksRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/report': {
+      id: '/app/report'
+      path: '/report'
+      fullPath: '/app/report'
+      preLoaderRoute: typeof AppReportRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/preview': {
@@ -175,11 +237,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPreviewRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/intake': {
+      id: '/app/intake'
+      path: '/intake'
+      fullPath: '/app/intake'
+      preLoaderRoute: typeof AppIntakeRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/failures': {
       id: '/app/failures'
       path: '/failures'
       fullPath: '/app/failures'
       preLoaderRoute: typeof AppFailuresRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/deployments': {
+      id: '/app/deployments'
+      path: '/deployments'
+      fullPath: '/app/deployments'
+      preLoaderRoute: typeof AppDeploymentsRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/chat': {
@@ -210,9 +286,13 @@ interface AppRouteChildren {
   AppAgentsRoute: typeof AppAgentsRoute
   AppChangesRoute: typeof AppChangesRoute
   AppChatRoute: typeof AppChatRoute
+  AppDeploymentsRoute: typeof AppDeploymentsRoute
   AppFailuresRoute: typeof AppFailuresRoute
+  AppIntakeRoute: typeof AppIntakeRoute
   AppPreviewRoute: typeof AppPreviewRoute
+  AppReportRoute: typeof AppReportRoute
   AppTasksRoute: typeof AppTasksRoute
+  AppTeamRoute: typeof AppTeamRoute
   AppIndexRoute: typeof AppIndexRoute
 }
 
@@ -220,9 +300,13 @@ const AppRouteChildren: AppRouteChildren = {
   AppAgentsRoute: AppAgentsRoute,
   AppChangesRoute: AppChangesRoute,
   AppChatRoute: AppChatRoute,
+  AppDeploymentsRoute: AppDeploymentsRoute,
   AppFailuresRoute: AppFailuresRoute,
+  AppIntakeRoute: AppIntakeRoute,
   AppPreviewRoute: AppPreviewRoute,
+  AppReportRoute: AppReportRoute,
   AppTasksRoute: AppTasksRoute,
+  AppTeamRoute: AppTeamRoute,
   AppIndexRoute: AppIndexRoute,
 }
 
