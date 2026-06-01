@@ -1,5 +1,5 @@
 import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
-import { MessageSquare, Bot, ListChecks, Eye, GitBranch, ShieldAlert, Rocket, Users, FileText, Home } from "lucide-react";
+import { MessageSquare, Bot, ListChecks, Eye, GitBranch, ShieldAlert, Rocket, Users, FileText, Home, AlertTriangle } from "lucide-react";
 import { useForgeState } from "@/lib/client";
 
 export const Route = createFileRoute("/app")({
@@ -27,50 +27,61 @@ function AppLayout() {
   const total = tasks.length;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
   const pendingApprovals = (data?.approvals ?? []).length;
+  const isFallback = data && data.aiAvailable === false;
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-card p-4">
-        <Link to="/" className="mb-6 flex items-center gap-2 px-2 py-1 font-semibold">
-          <span className="inline-block size-5 rounded-md bg-foreground" />
-          ForgeCloud
-        </Link>
-        <div className="mb-2 px-2 text-xs uppercase tracking-wider text-muted-foreground">Workspace</div>
-        <nav className="flex flex-col gap-1">
-          {nav.map((n) => {
-            const active = pathname === n.to;
-            return (
-              <Link
-                key={n.to}
-                to={n.to}
-                className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition ${
-                  active ? "bg-foreground text-background" : "hover:bg-muted text-foreground"
-                }`}
-              >
-                <n.icon className="size-4" />
-                {n.label}
-                {n.label === "Failures" && pendingApprovals > 0 && (
-                  <span className="ml-auto rounded-full bg-coral px-2 py-0.5 text-[10px] font-semibold text-white">
-                    {pendingApprovals}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="mt-auto rounded-2xl border border-border bg-background p-3">
-          <div className="text-xs font-medium">{data?.project?.name ?? "Untitled Project"}</div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            {total === 0 ? "Not started" : `Building — ${pct}%`}
-          </div>
-          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-            <div className="h-full bg-brand transition-all" style={{ width: `${pct}%` }} />
-          </div>
+    <div className="flex min-h-screen flex-col bg-background">
+      {isFallback && (
+        <div className="flex items-center justify-center gap-2 border-b border-amber/20 bg-amber/10 px-4 py-1.5 text-xs text-amber">
+          <AlertTriangle className="size-3" />
+          <span>
+            <strong>Demo mode</strong> — AI is in fallback mode (no ANTHROPIC_API_KEY set). All features work, agents respond with template output.
+          </span>
         </div>
-      </aside>
-      <main className="flex-1 overflow-x-hidden">
-        <Outlet />
-      </main>
+      )}
+      <div className="flex min-h-screen">
+        <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-card p-4">
+          <Link to="/" className="mb-6 flex items-center gap-2 px-2 py-1 font-semibold">
+            <span className="inline-block size-5 rounded-md bg-foreground" />
+            ForgeCloud
+          </Link>
+          <div className="mb-2 px-2 text-xs uppercase tracking-wider text-muted-foreground">Workspace</div>
+          <nav className="flex flex-col gap-1">
+            {nav.map((n) => {
+              const active = pathname === n.to;
+              return (
+                <Link
+                  key={n.to}
+                  to={n.to}
+                  className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition ${
+                    active ? "bg-foreground text-background" : "hover:bg-muted text-foreground"
+                  }`}
+                >
+                  <n.icon className="size-4" />
+                  {n.label}
+                  {n.label === "Failures" && pendingApprovals > 0 && (
+                    <span className="ml-auto rounded-full bg-coral px-2 py-0.5 text-[10px] font-semibold text-white">
+                      {pendingApprovals}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
+          </nav>
+          <div className="mt-auto rounded-2xl border border-border bg-background p-3">
+            <div className="text-xs font-medium">{data?.project?.name ?? "Untitled Project"}</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              {total === 0 ? "Not started" : `Building — ${pct}%`}
+            </div>
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+              <div className="h-full bg-brand transition-all" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        </aside>
+        <main className="flex-1 overflow-x-hidden">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }

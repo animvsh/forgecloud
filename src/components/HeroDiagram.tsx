@@ -21,12 +21,12 @@ function Node({
 
 export function HeroDiagram() {
   return (
-    <div className="relative mx-auto h-[360px] w-full max-w-5xl">
+    <div className="relative mx-auto h-[280px] w-full max-w-5xl sm:h-[360px]">
       {/* connector lines */}
       <svg
         className="absolute inset-0 h-full w-full"
         viewBox="0 0 1000 360"
-        preserveAspectRatio="none"
+        preserveAspectRatio="xMidYMid meet"
         aria-hidden
       >
         <g stroke="currentColor" strokeWidth="1" className="text-border" fill="none">
@@ -47,36 +47,36 @@ export function HeroDiagram() {
         </g>
       </svg>
 
-      {/* nodes */}
-      <Node className="size-20 bg-card" style={{ left: 70, top: 140 }}>
-        <MessageSquare className="size-9 text-foreground/80" />
+      {/* nodes — positioned in % to scale with viewport */}
+      <Node className="size-14 bg-card sm:size-20" style={{ left: "4%", top: "32%" }}>
+        <MessageSquare className="size-6 text-foreground/80 sm:size-9" />
       </Node>
 
-      <Node className="size-16" style={{ left: 230, top: 70, background: "var(--amber)" }}>
-        <Sparkles className="size-7 text-foreground" />
+      <Node className="size-12 sm:size-16" style={{ left: "19%", top: "14%", background: "var(--amber)" }}>
+        <Sparkles className="size-5 text-foreground sm:size-7" />
       </Node>
 
-      <Node className="size-16" style={{ left: 230, top: 220, background: "var(--sky)" }}>
-        <GitBranch className="size-7 text-foreground" />
+      <Node className="size-12 sm:size-16" style={{ left: "19%", top: "54%", background: "var(--sky)" }}>
+        <GitBranch className="size-5 text-foreground sm:size-7" />
       </Node>
 
       <Node
-        className="size-28"
-        style={{ left: 446, top: 122, background: "var(--violet)" }}
+        className="size-20 sm:size-28"
+        style={{ left: "42%", top: "27%", background: "var(--violet)" }}
       >
-        <Check className="size-14 text-white" strokeWidth={2.5} />
+        <Check className="size-9 text-white sm:size-14" strokeWidth={2.5} />
       </Node>
 
-      <Node className="size-16" style={{ left: 710, top: 70, background: "var(--coral)" }}>
-        <Shield className="size-7 text-white" />
+      <Node className="size-12 sm:size-16" style={{ left: "68%", top: "14%", background: "var(--coral)" }}>
+        <Shield className="size-5 text-white sm:size-7" />
       </Node>
 
-      <Node className="size-16 bg-card" style={{ left: 710, top: 220 }}>
-        <Bot className="size-7 text-foreground/80" />
+      <Node className="size-12 bg-card sm:size-16" style={{ left: "68%", top: "54%" }}>
+        <Bot className="size-5 text-foreground/80 sm:size-7" />
       </Node>
 
-      <Node className="size-20 bg-card" style={{ left: 855, top: 140 }}>
-        <Eye className="size-9 text-foreground/80" />
+      <Node className="size-14 bg-card sm:size-20" style={{ left: "83%", top: "32%" }}>
+        <Eye className="size-6 text-foreground/80 sm:size-9" />
       </Node>
     </div>
   );

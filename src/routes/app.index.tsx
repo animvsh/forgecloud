@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useForgeState, useRunAllTasks, useInjectFailure, useDeployProduction, useResetProject } from "@/lib/client";
-import { Sparkles, Bot, GitBranch, ShieldCheck, Rocket, AlertTriangle, ArrowRight, Loader2, RotateCcw, MessageSquare } from "lucide-react";
+import { useForgeState, useRunAllTasks, useInjectFailure, useDeployProduction, useResetProject, useRunFullDemo } from "@/lib/client";
+import { Sparkles, Bot, GitBranch, ShieldCheck, Rocket, AlertTriangle, ArrowRight, Loader2, RotateCcw, MessageSquare, Play, CheckCircle2, Circle } from "lucide-react";
 import { useState } from "react";
 import { ScreenHeader } from "@/components/ScreenHeader";
 
@@ -8,13 +8,27 @@ export const Route = createFileRoute("/app/")({
   component: ProjectHome,
 });
 
+const DEMO_STEPS = [
+  { key: "init", label: "Initializing Pielot Waitlist" },
+  { key: "run-agents", label: "Running all 9 agents on backlog" },
+  { key: "model-timeout", label: "Triggering model timeout" },
+  { key: "build-failure", label: "Triggering build failure" },
+  { key: "secret-detected", label: "Detecting hardcoded secret" },
+  { key: "deploy-preview", label: "Deploying preview" },
+  { key: "deploy-prod", label: "Attempting production deploy" },
+  { key: "recover", label: "Recovering from failure" },
+] as const;
+
 function ProjectHome() {
   const { data, isLoading } = useForgeState();
   const runAll = useRunAllTasks();
   const inject = useInjectFailure();
   const deploy = useDeployProduction();
   const reset = useResetProject();
+  const runFullDemoMutation = useRunFullDemo();
   const [busy, setBusy] = useState<string | null>(null);
+  const [demoSteps, setDemoSteps] = useState<string[]>([]);
+  const [demoComplete, setDemoComplete] = useState(false);
 
   if (isLoading || !data) {
     return (
@@ -37,6 +51,26 @@ function ProjectHome() {
   const livePreview = deployments.find((d) => d.environment === "preview" && d.status === "live");
 
   async function runFullDemo() {
+    setBusy("full-demo");
+    setDemoSteps([]);
+    setDemoComplete(false);
+    try {
+      // Visual step progression with 600ms between steps
+      const stepOrder = ["init", "run-agents", "model-timeout", "build-failure", "secret-detected", "deploy-preview", "deploy-prod", "recover"];
+      for (const step of stepOrder) {
+        setDemoSteps((s) => [...s, step]);
+        await new Promise((r) => setTimeout(r, 600));
+      }
+      await runFullDemoMutation.mutateAsync();
+      setDemoComplete(true);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runAllAgents() {
     setBusy("run");
     try {
       await runAll.mutateAsync({});
@@ -45,7 +79,7 @@ function ProjectHome() {
     }
   }
 
-  async function runFullDemoWithFailure() {
+  async function runAllWithFailure() {
     setBusy("run-fail");
     try {
       const failureAt = Math.max(0, Math.floor(tasks.filter((t) => t.status === "backlog").length / 2));
@@ -74,11 +108,12 @@ function ProjectHome() {
   }
 
   async function doReset() {
-    if (!confirm("Reset the demo? This wipes all data.")) return;
+    if (!confirm("Reset the demo? This wipes all data and re-seeds.")) return;
     await reset.mutateAsync();
   }
 
   const hasWork = total > 0;
+  const showDemoOverlay = busy === "full-demo" || demoComplete;
 
   return (
     <div className="min-h-screen">
@@ -141,6 +176,64 @@ function ProjectHome() {
               <Stat label="Recoveries" value={recovery.length} sub={recovery.length > 0 ? "Last: " + new Date(recovery[0].created_at).toLocaleTimeString() : "All systems healthy"} />
             </div>
 
+            {/* Full demo section */}
+            <div className="rounded-3xl border-2 border-brand/30 bg-gradient-to-br from-brand/5 via-card to-card p-6">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="size-5 text-brand" />
+                    <h2 className="text-xl font-bold">Run the full demo</h2>
+                  </div>
+                  <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                    Watch the AI team work end-to-end. Spins up agents, runs into 3 real-world failures, deploys a preview, and recovers from a failed production deploy. Takes about 5-10 seconds.
+                  </p>
+                </div>
+                <button
+                  onClick={runFullDemo}
+                  disabled={busy !== null}
+                  className="inline-flex items-center gap-2 rounded-full bg-brand px-6 py-3 font-medium text-brand-foreground shadow-lg shadow-brand/30 hover:brightness-105 disabled:opacity-40"
+                >
+                  {busy === "full-demo" ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Play className="size-4 fill-current" />
+                  )}
+                  Run full demo
+                </button>
+              </div>
+
+              {showDemoOverlay && (
+                <div className="mt-6 rounded-2xl border border-border bg-background p-4">
+                  <div className="space-y-2">
+                    {DEMO_STEPS.map((s) => {
+                      const isActive = demoSteps[demoSteps.length - 1] === s.key && busy === "full-demo";
+                      const isComplete = demoSteps.indexOf(s.key) < demoSteps.length - 1 || (demoComplete && demoSteps.includes(s.key));
+                      const isPending = !demoSteps.includes(s.key);
+                      return (
+                        <div key={s.key} className="flex items-center gap-3 text-sm">
+                          {isComplete ? (
+                            <CheckCircle2 className="size-4 text-mint" />
+                          ) : isActive ? (
+                            <Loader2 className="size-4 animate-spin text-brand" />
+                          ) : (
+                            <Circle className="size-4 text-muted-foreground/30" />
+                          )}
+                          <span className={isComplete ? "text-foreground" : isActive ? "text-foreground" : "text-muted-foreground"}>
+                            {s.label}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {demoComplete && (
+                    <div className="mt-4 rounded-xl bg-mint/10 px-4 py-2 text-sm text-mint">
+                      Full demo complete. Check the Failures, Deployments, and PRs screens.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="grid gap-4 md:grid-cols-2">
               <div className="rounded-3xl border border-border bg-card p-6">
                 <div className="flex items-center justify-between">
@@ -160,22 +253,22 @@ function ProjectHome() {
                     <Rocket className="size-4 text-brand" />
                     <div className="flex-1">
                       <div className="text-xs text-muted-foreground">Live preview</div>
-                      <div className="font-mono text-xs">{livePreview.railway_url || livePreview.cloudflare_url}</div>
+                      <div className="font-mono text-xs">{livePreview.cloudflare_url || livePreview.railway_url}</div>
                     </div>
                     <Link to="/app/preview" className="text-xs text-brand hover:underline">Open</Link>
                   </div>
                 )}
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
-                    onClick={runFullDemo}
+                    onClick={runAllAgents}
                     disabled={busy !== null}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-brand px-4 py-2 text-sm font-medium text-brand-foreground hover:brightness-105 disabled:opacity-40"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background hover:opacity-90 disabled:opacity-40"
                   >
                     {busy === "run" ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
                     Run all agents
                   </button>
                   <button
-                    onClick={runFullDemoWithFailure}
+                    onClick={runAllWithFailure}
                     disabled={busy !== null}
                     className="inline-flex items-center gap-1.5 rounded-full border border-coral bg-coral/10 px-4 py-2 text-sm font-medium text-coral hover:bg-coral/20 disabled:opacity-40"
                   >
@@ -204,7 +297,7 @@ function ProjectHome() {
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="text-sm font-medium text-muted-foreground">Deployment</div>
-                    <div className="mt-1 text-xl font-semibold">Railway</div>
+                    <div className="mt-1 text-xl font-semibold">Railway + Cloudflare</div>
                   </div>
                   <Rocket className="size-6 text-brand" />
                 </div>
@@ -254,7 +347,7 @@ function ProjectHome() {
                     </div>
                   ))}
                   {prs.length === 0 && recovery.length === 0 && (
-                    <div className="text-xs text-muted-foreground">Nothing yet. Click "Run all agents" to start.</div>
+                    <div className="text-xs text-muted-foreground">Nothing yet. Click "Run full demo" to start.</div>
                   )}
                 </div>
               </div>

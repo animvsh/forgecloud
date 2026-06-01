@@ -71,10 +71,16 @@ function Landing() {
               {hasExistingBuild ? (
                 <>
                   <Link
-                    to="/app/chat"
+                    to="/app/index"
                     className="rounded-full border border-border bg-card px-6 py-3.5 font-medium hover:bg-muted"
                   >
-                    Continue {projectName}
+                    Try the demo
+                  </Link>
+                  <Link
+                    to="/app/chat"
+                    className="rounded-full border border-border bg-card px-4 py-3.5 text-sm text-muted-foreground hover:bg-muted"
+                  >
+                    Open chat
                   </Link>
                   <button
                     onClick={() => setShowReset((v) => !v)}
@@ -87,12 +93,12 @@ function Landing() {
                       <div className="max-w-md rounded-2xl border border-border bg-card p-6 text-left" onClick={(e) => e.stopPropagation()}>
                         <h3 className="text-lg font-semibold">Reset demo?</h3>
                         <p className="mt-2 text-sm text-muted-foreground">
-                          Wipes all tasks, PRs, agents, deployments, and chat. You start fresh.
+                          Wipes all tasks, PRs, agents, deployments, and chat. The demo project will be re-seeded on next visit.
                         </p>
                         <div className="mt-4 flex justify-end gap-2">
                           <button onClick={() => setShowReset(false)} className="rounded-full border border-border px-4 py-2 text-sm hover:bg-muted">Cancel</button>
                           <button
-                            onClick={async () => { await reset.mutateAsync(); setShowReset(false); navigate({ to: "/app/intake" }); }}
+                            onClick={async () => { await reset.mutateAsync(); setShowReset(false); navigate({ to: "/app/index" }); }}
                             className="rounded-full bg-coral px-4 py-2 text-sm font-medium text-white hover:brightness-110"
                           >
                             Reset
@@ -103,8 +109,8 @@ function Landing() {
                   )}
                 </>
               ) : (
-                <Link to="/app/preview" className="rounded-full border border-border bg-card px-6 py-3.5 font-medium hover:bg-muted">
-                  View demo project
+                <Link to="/app/index" className="rounded-full border border-border bg-card px-6 py-3.5 font-medium hover:bg-muted">
+                  Try the demo
                 </Link>
               )}
             </div>
@@ -215,8 +221,8 @@ function Landing() {
               <Link to="/app/intake" className="inline-flex items-center gap-2 rounded-full bg-foreground px-6 py-3.5 font-medium text-background hover:opacity-90">
                 Start building <ArrowRight className="size-4" />
               </Link>
-              <Link to="/app/preview" className="rounded-full border border-border bg-card px-6 py-3.5 font-medium hover:bg-muted">
-                View demo project
+              <Link to="/app/index" className="rounded-full border border-border bg-card px-6 py-3.5 font-medium hover:bg-muted">
+                Try the demo
               </Link>
             </div>
           </div>
