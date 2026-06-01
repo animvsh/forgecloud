@@ -24,8 +24,6 @@ RUN bun install --frozen-lockfile
 COPY . .
 RUN bun run build
 
-# Persistent volume for SQLite
-VOLUME ["/data"]
 ENV INSFORGE_DB_PATH=/data/forgecloud.sqlite
 
 ENV PORT=3000
