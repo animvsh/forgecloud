@@ -248,7 +248,13 @@ function seedDemoProject() {
   // Chat messages
   const chatMsgs: Array<[string, string, string, string | null, number]> = [
     ["msg-1", "user", "Build a waitlist app for Pielot. I want a clean landing page, an email signup form, and an admin view for tracking signups.", null, now - 1000 * 60 * 60 * 24 * 2],
-    ["msg-2", "assistant", "Got it. Here's the build plan. Review the features below, then I'll start building once you approve.", JSON.stringify({ kind: "plan" }), now - 1000 * 60 * 60 * 24 * 2 + 1000 * 60 * 5],
+    ["msg-2", "assistant", "Got it. Here's the build plan. Review the features below, then I'll start building once you approve.", JSON.stringify({ kind: "plan", plan: { summary: "A complete waitlist app for Pielot with landing page, signup form, admin dashboard, and email confirmation.", suggestedProjectName: "Pielot Waitlist", suggestedStyle: "Stripe-modern", features: [
+      { title: "Landing page", description: "Hero, features, and call-to-action", ownerAgent: "Design Agent", riskLevel: "low", estimatedFiles: 3 },
+      { title: "Waitlist form", description: "Email signup with confirmation", ownerAgent: "Frontend Agent", riskLevel: "low", estimatedFiles: 2 },
+      { title: "Admin dashboard", description: "View signups and export to CSV", ownerAgent: "Frontend Agent", riskLevel: "low", estimatedFiles: 3 },
+      { title: "Email confirmation", description: "Send welcome email on signup", ownerAgent: "Backend Agent", riskLevel: "med", estimatedFiles: 2 },
+      { title: "Preview deploy", description: "Live preview URL", ownerAgent: "DevOps Agent", riskLevel: "low", estimatedFiles: 1 },
+    ] }, taskIds: [] }), now - 1000 * 60 * 60 * 24 * 2 + 1000 * 60 * 5],
     ["msg-3", "user", "Looks good. Add a position-in-line badge to the thank-you page.", null, now - 1000 * 60 * 60 * 3],
     ["msg-4", "assistant", "Done. Created task \"Show position in line\" and assigned it to the Frontend Agent. Watch it on the Tasks screen.", JSON.stringify({ kind: "task_created" }), now - 1000 * 60 * 60 * 3 + 1000 * 60 * 2],
   ];

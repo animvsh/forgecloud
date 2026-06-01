@@ -48,10 +48,10 @@ function FailuresScreen() {
   const recovered = events.filter((e) => e.status === "recovered");
   const pending = data.approvals;
 
-  async function injectFailure(type: Parameters<typeof inject.mutate>[0]) {
+  async function injectFailure(type: string) {
     setBusy(type);
     try {
-      await inject.mutateAsync(type);
+      await inject.mutateAsync({ type });
     } finally {
       setBusy(null);
     }

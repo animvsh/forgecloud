@@ -113,7 +113,7 @@ function ChatScreen() {
             const meta = m.metadata ? (() => {
               try { return JSON.parse(m.metadata); } catch { return null; }
             })() : null;
-            if (meta?.kind === "plan") {
+            if (meta?.kind === "plan" && meta.plan) {
               const plan = meta.plan;
               return (
                 <div key={m.id} className="space-y-3">
