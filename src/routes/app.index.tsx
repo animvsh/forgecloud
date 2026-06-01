@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useForgeState, useRunAllTasks, useInjectFailure, useDeployProduction, useResetProject, useRunFullDemo } from "@/lib/client";
-import { Sparkles, Bot, GitBranch, ShieldCheck, Rocket, AlertTriangle, ArrowRight, Loader2, RotateCcw, MessageSquare, Play, CheckCircle2, Circle } from "lucide-react";
+import { Sparkles, GitBranch, ShieldCheck, Rocket, AlertTriangle, ArrowRight, Loader2, RotateCcw, MessageSquare, Play, CheckCircle2, Circle } from "lucide-react";
 import { useState } from "react";
 import { ScreenHeader } from "@/components/ScreenHeader";
+import { MiniDiagram } from "@/components/MiniDiagram";
 
 export const Route = createFileRoute("/app/")({
   component: ProjectHome,
@@ -32,8 +33,11 @@ function ProjectHome() {
 
   if (isLoading || !data) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      <div className="flex h-[60vh] items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="size-6 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Loading your project...</p>
+        </div>
       </div>
     );
   }
@@ -55,7 +59,6 @@ function ProjectHome() {
     setDemoSteps([]);
     setDemoComplete(false);
     try {
-      // Visual step progression with 600ms between steps
       const stepOrder = ["init", "run-agents", "model-timeout", "build-failure", "secret-detected", "deploy-preview", "deploy-prod", "recover"];
       for (const step of stepOrder) {
         setDemoSteps((s) => [...s, step]);
@@ -72,11 +75,7 @@ function ProjectHome() {
 
   async function runAllAgents() {
     setBusy("run");
-    try {
-      await runAll.mutateAsync({});
-    } finally {
-      setBusy(null);
-    }
+    try { await runAll.mutateAsync({}); } finally { setBusy(null); }
   }
 
   async function runAllWithFailure() {
@@ -84,27 +83,17 @@ function ProjectHome() {
     try {
       const failureAt = Math.max(0, Math.floor(tasks.filter((t) => t.status === "backlog").length / 2));
       await runAll.mutateAsync({ failureAt, failureType: "build_failed" });
-    } finally {
-      setBusy(null);
-    }
+    } finally { setBusy(null); }
   }
 
   async function triggerFailure(type: Parameters<typeof inject.mutate>[0]) {
     setBusy(`fail-${type}`);
-    try {
-      await inject.mutateAsync(type);
-    } finally {
-      setBusy(null);
-    }
+    try { await inject.mutateAsync(type); } finally { setBusy(null); }
   }
 
   async function deployProd(fail = false) {
     setBusy(fail ? "deploy-fail" : "deploy");
-    try {
-      await deploy.mutateAsync(fail);
-    } finally {
-      setBusy(null);
-    }
+    try { await deploy.mutateAsync(fail); } finally { setBusy(null); }
   }
 
   async function doReset() {
@@ -116,253 +105,273 @@ function ProjectHome() {
   const showDemoOverlay = busy === "full-demo" || demoComplete;
 
   return (
-    <div className="min-h-screen">
+    <div className="space-y-6">
       <ScreenHeader
         title={data.project.name}
         subtitle={data.project.description ?? "Your team's AI software team is on the case."}
         action={
-          <div className="flex items-center gap-2">
-            {hasWork && (
-              <>
-                <button
-                  onClick={doReset}
-                  className="rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted"
-                >
-                  <RotateCcw className="mr-1 inline size-3" /> Reset
-                </button>
-                <Link
-                  to="/app/chat"
-                  className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs hover:bg-muted"
-                >
-                  <MessageSquare className="size-3" /> Open chat
-                </Link>
-              </>
-            )}
-          </div>
+          hasWork && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={doReset}
+                className="rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted transition-colors"
+              >
+                <RotateCcw className="mr-1 inline size-3" /> Reset
+              </button>
+              <Link
+                to="/app/chat"
+                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs hover:bg-muted transition-colors"
+              >
+                <MessageSquare className="size-3" /> Open chat
+              </Link>
+            </div>
+          )
         }
       />
 
-      <div className="space-y-6 p-8">
-        {!hasWork && (
-          <div className="rounded-3xl border-2 border-dashed border-border bg-card p-10 text-center">
-            <Sparkles className="mx-auto size-10 text-brand" />
-            <h2 className="mt-4 text-2xl font-bold">No project yet</h2>
-            <p className="mt-2 text-muted-foreground">
-              Start by telling ForgeCloud what you want to build.
-            </p>
-            <Link
-              to="/app/intake"
-              className="mt-6 inline-flex items-center gap-2 rounded-full bg-brand px-6 py-3 font-medium text-brand-foreground hover:brightness-105"
-            >
-              Start building <ArrowRight className="size-4" />
+      {!hasWork && (
+        <div className="rounded-3xl border-2 border-dashed border-border bg-card p-10 text-center card-hover">
+          <div className="mx-auto flex size-14 items-center justify-center squircle" style={{ background: "var(--violet)" }}>
+            <Sparkles className="size-7 text-white" />
+          </div>
+          <h2 className="mt-4 text-2xl font-bold">No project yet</h2>
+          <p className="mt-2 text-muted-foreground">
+            Start by telling ForgeCloud what you want to build.
+          </p>
+          <Link
+            to="/app/intake"
+            className="mt-6 inline-flex items-center gap-2 rounded-full bg-brand px-6 py-3 font-medium text-brand-foreground shadow-lg shadow-brand/30 hover:brightness-105 transition-all"
+          >
+            Start building <ArrowRight className="size-4" />
+          </Link>
+          <p className="mt-6 text-xs text-muted-foreground">
+            Or open the chat and type any product idea.
+          </p>
+          <div className="mt-4 flex items-center justify-center gap-2">
+            <Link to="/app/chat" className="rounded-full border border-border bg-background px-4 py-2 text-sm hover:bg-muted transition-colors">
+              Open chat
             </Link>
-            <p className="mt-6 text-xs text-muted-foreground">
-              Or open the chat and type any product idea.
-            </p>
-            <div className="mt-4 flex items-center justify-center gap-2">
-              <Link to="/app/chat" className="rounded-full border border-border bg-background px-4 py-2 text-sm hover:bg-muted">
-                Open chat
-              </Link>
+          </div>
+        </div>
+      )}
+
+      {hasWork && (
+        <>
+          {/* Mini diagram hero */}
+          <div className="rounded-3xl border border-border bg-card p-6 overflow-hidden">
+            <MiniDiagram
+              projectName={data.project.name}
+              agentCount={agents.length}
+              taskCount={total}
+              doneCount={done}
+              prCount={prs.length}
+              recoveryCount={recovery.length}
+            />
+            <div className="mt-2 text-center">
+              <p className="text-lg font-semibold">{data.project.name}</p>
+              <p className="text-sm text-muted-foreground">
+                {done} of {total} features built &middot; {agents.length} agents working
+              </p>
             </div>
           </div>
-        )}
 
-        {hasWork && (
-          <>
-            <div className="grid gap-4 md:grid-cols-4">
-              <Stat label="Tasks" value={`${done}/${total}`} sub={`${building} building · ${review} in review`} />
-              <Stat label="Pull requests" value={prs.length} sub={`${prs.filter((p) => p.status === "open").length} open · ${prs.filter((p) => p.status === "approved").length} approved`} />
-              <Stat label="Agents active" value={agents.filter((a) => a.status !== "idle").length} sub={`${agents.length} total`} />
-              <Stat label="Recoveries" value={recovery.length} sub={recovery.length > 0 ? "Last: " + new Date(recovery[0].created_at).toLocaleTimeString() : "All systems healthy"} />
-            </div>
+          {/* Stats grid */}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Stat label="Tasks" value={`${done}/${total}`} sub={`${building} building · ${review} in review`} accent="var(--violet)" />
+            <Stat label="Pull requests" value={prs.length} sub={`${prs.filter((p) => p.status === "open").length} open · ${prs.filter((p) => p.status === "approved").length} approved`} accent="var(--sky)" />
+            <Stat label="Agents active" value={agents.filter((a) => a.status !== "idle").length} sub={`${agents.length} total`} accent="var(--mint)" />
+            <Stat label="Recoveries" value={recovery.length} sub={recovery.length > 0 ? "Last: " + new Date(recovery[0].created_at).toLocaleTimeString() : "All systems healthy"} accent="var(--coral)" />
+          </div>
 
-            {/* Full demo section */}
-            <div className="rounded-3xl border-2 border-brand/30 bg-gradient-to-br from-brand/5 via-card to-card p-6">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="size-5 text-brand" />
-                    <h2 className="text-xl font-bold">Run the full demo</h2>
+          {/* Full demo section */}
+          <div className="rounded-3xl border-2 border-brand/30 gradient-header p-6 card-hover">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <div className="flex size-8 items-center justify-center squircle" style={{ background: "var(--violet)" }}>
+                    <Sparkles className="size-4 text-white" />
                   </div>
-                  <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                    Watch the AI team work end-to-end. Spins up agents, runs into 3 real-world failures, deploys a preview, and recovers from a failed production deploy. Takes about 5-10 seconds.
-                  </p>
+                  <h2 className="text-xl font-bold">Run the full demo</h2>
                 </div>
-                <button
-                  onClick={runFullDemo}
-                  disabled={busy !== null}
-                  className="inline-flex items-center gap-2 rounded-full bg-brand px-6 py-3 font-medium text-brand-foreground shadow-lg shadow-brand/30 hover:brightness-105 disabled:opacity-40"
-                >
-                  {busy === "full-demo" ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Play className="size-4 fill-current" />
-                  )}
-                  Run full demo
-                </button>
+                <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+                  Watch the AI team work end-to-end. Spins up agents, runs into 3 real-world failures, deploys a preview, and recovers from a failed production deploy. Takes about 5-10 seconds.
+                </p>
               </div>
-
-              {showDemoOverlay && (
-                <div className="mt-6 rounded-2xl border border-border bg-background p-4">
-                  <div className="space-y-2">
-                    {DEMO_STEPS.map((s) => {
-                      const isActive = demoSteps[demoSteps.length - 1] === s.key && busy === "full-demo";
-                      const isComplete = demoSteps.indexOf(s.key) < demoSteps.length - 1 || (demoComplete && demoSteps.includes(s.key));
-                      const isPending = !demoSteps.includes(s.key);
-                      return (
-                        <div key={s.key} className="flex items-center gap-3 text-sm">
-                          {isComplete ? (
-                            <CheckCircle2 className="size-4 text-mint" />
-                          ) : isActive ? (
-                            <Loader2 className="size-4 animate-spin text-brand" />
-                          ) : (
-                            <Circle className="size-4 text-muted-foreground/30" />
-                          )}
-                          <span className={isComplete ? "text-foreground" : isActive ? "text-foreground" : "text-muted-foreground"}>
-                            {s.label}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {demoComplete && (
-                    <div className="mt-4 rounded-xl bg-mint/10 px-4 py-2 text-sm text-mint">
-                      Full demo complete. Check the Failures, Deployments, and PRs screens.
-                    </div>
-                  )}
-                </div>
-              )}
+              <button
+                onClick={runFullDemo}
+                disabled={busy !== null}
+                className="inline-flex items-center gap-2 rounded-full bg-brand px-6 py-3 font-medium text-brand-foreground shadow-lg shadow-brand/30 hover:brightness-105 hover:scale-105 transition-all disabled:opacity-40 disabled:hover:scale-100"
+              >
+                {busy === "full-demo" ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4 fill-current" />}
+                Run full demo
+              </button>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-3xl border border-border bg-card p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-medium text-muted-foreground">Build progress</div>
-                    <div className="mt-1 text-3xl font-bold">{pct}%</div>
-                  </div>
-                  <div className="text-right text-xs text-muted-foreground">
-                    <div>{done} of {total} tasks done</div>
-                  </div>
+            {showDemoOverlay && (
+              <div className="mt-6 rounded-2xl border border-border bg-background p-4 animate-in fade-in slide-in-from-top-2">
+                <div className="space-y-2">
+                  {DEMO_STEPS.map((s) => {
+                    const isActive = demoSteps[demoSteps.length - 1] === s.key && busy === "full-demo";
+                    const isComplete = demoSteps.indexOf(s.key) < demoSteps.length - 1 || (demoComplete && demoSteps.includes(s.key));
+                    const isPending = !demoSteps.includes(s.key);
+                    return (
+                      <div key={s.key} className="flex items-center gap-3 text-sm transition-all">
+                        {isComplete ? <CheckCircle2 className="size-4 text-mint" /> :
+                         isActive ? <Loader2 className="size-4 animate-spin text-brand" /> :
+                         <Circle className="size-4 text-muted-foreground/30" />}
+                        <span className={isComplete ? "text-foreground" : isActive ? "text-foreground font-medium" : "text-muted-foreground"}>
+                          {s.label}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-muted">
-                  <div className="h-full bg-brand transition-all" style={{ width: `${pct}%` }} />
-                </div>
-                {livePreview && (
-                  <div className="mt-4 flex items-center gap-2 rounded-2xl border border-border bg-background p-3 text-sm">
-                    <Rocket className="size-4 text-brand" />
-                    <div className="flex-1">
-                      <div className="text-xs text-muted-foreground">Live preview</div>
-                      <div className="font-mono text-xs">{livePreview.cloudflare_url || livePreview.railway_url}</div>
-                    </div>
-                    <Link to="/app/preview" className="text-xs text-brand hover:underline">Open</Link>
+                {demoComplete && (
+                  <div className="mt-4 rounded-xl bg-mint/10 px-4 py-2 text-sm text-mint animate-in fade-in">
+                    Full demo complete. Check the Failures, Deployments, and PRs screens.
                   </div>
                 )}
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button
-                    onClick={runAllAgents}
-                    disabled={busy !== null}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background hover:opacity-90 disabled:opacity-40"
-                  >
-                    {busy === "run" ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
-                    Run all agents
-                  </button>
-                  <button
-                    onClick={runAllWithFailure}
-                    disabled={busy !== null}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-coral bg-coral/10 px-4 py-2 text-sm font-medium text-coral hover:bg-coral/20 disabled:opacity-40"
-                  >
-                    {busy === "run-fail" ? <Loader2 className="size-3.5 animate-spin" /> : <AlertTriangle className="size-3.5" />}
-                    Run with a build failure
-                  </button>
+              </div>
+            )}
+          </div>
+
+          {/* Build progress + Failure injection */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-3xl border border-border bg-card p-6 card-hover">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium text-muted-foreground">Build progress</div>
+                  <div className="mt-1 text-3xl font-bold gradient-text">{pct}%</div>
+                </div>
+                <div className="text-right text-xs text-muted-foreground">
+                  <div>{done} of {total} tasks done</div>
                 </div>
               </div>
-
-              <div className="rounded-3xl border border-border bg-card p-6">
-                <div className="text-sm font-medium text-muted-foreground">Failure injection</div>
-                <p className="mt-1 text-xs text-muted-foreground">Simulate things breaking. ForgeCloud recovers.</p>
-                <div className="mt-4 grid grid-cols-2 gap-2">
-                  <FailButton onClick={() => triggerFailure("model_timeout")} busy={busy === "fail-model_timeout"} label="Model timeout" />
-                  <FailButton onClick={() => triggerFailure("build_failed")} busy={busy === "fail-build_failed"} label="Build failed" />
-                  <FailButton onClick={() => triggerFailure("secret_detected")} busy={busy === "fail-secret_detected"} label="Secret in code" />
-                  <FailButton onClick={() => triggerFailure("unsafe_db_migration")} busy={busy === "fail-unsafe_db_migration"} label="Unsafe DB change" />
-                  <FailButton onClick={() => triggerFailure("bad_output")} busy={busy === "fail-bad_output"} label="Bad agent output" />
-                  <FailButton onClick={() => triggerFailure("agent_conflict")} busy={busy === "fail-agent_conflict"} label="Agent conflict" />
+              <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-muted">
+                <div className="h-full bg-gradient-to-r from-brand to-violet transition-all duration-500" style={{ width: `${pct}%` }} />
+              </div>
+              {livePreview && (
+                <div className="mt-4 flex items-center gap-2 rounded-2xl border border-border bg-background p-3 text-sm">
+                  <Rocket className="size-4 text-brand" />
+                  <div className="flex-1">
+                    <div className="text-xs text-muted-foreground">Live preview</div>
+                    <div className="font-mono text-xs">{livePreview.cloudflare_url || livePreview.railway_url}</div>
+                  </div>
+                  <Link to="/app/preview" className="text-xs text-brand hover:underline transition-colors">Open</Link>
                 </div>
+              )}
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  onClick={runAllAgents}
+                  disabled={busy !== null}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background hover:opacity-90 transition-all disabled:opacity-40"
+                >
+                  {busy === "run" ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+                  Run all agents
+                </button>
+                <button
+                  onClick={runAllWithFailure}
+                  disabled={busy !== null}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-coral bg-coral/10 px-4 py-2 text-sm font-medium text-coral hover:bg-coral/20 transition-all disabled:opacity-40"
+                >
+                  {busy === "run-fail" ? <Loader2 className="size-3.5 animate-spin" /> : <AlertTriangle className="size-3.5" />}
+                  Run with a build failure
+                </button>
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-3xl border border-border bg-card p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-medium text-muted-foreground">Deployment</div>
-                    <div className="mt-1 text-xl font-semibold">Railway + Cloudflare</div>
-                  </div>
-                  <Rocket className="size-6 text-brand" />
-                </div>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Production deploy requires build + QA + approval checks.
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button
-                    onClick={() => deployProd(false)}
-                    disabled={busy !== null}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background hover:opacity-90 disabled:opacity-40"
-                  >
-                    {busy === "deploy" ? <Loader2 className="size-3.5 animate-spin" /> : <Rocket className="size-3.5" />}
-                    Deploy to production
-                  </button>
-                  <button
-                    onClick={() => deployProd(true)}
-                    disabled={busy !== null}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-coral bg-coral/10 px-4 py-2 text-sm font-medium text-coral hover:bg-coral/20 disabled:opacity-40"
-                  >
-                    {busy === "deploy-fail" ? <Loader2 className="size-3.5 animate-spin" /> : <AlertTriangle className="size-3.5" />}
-                    Simulate deploy failure
-                  </button>
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-border bg-card p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-medium text-muted-foreground">Recent activity</div>
-                    <div className="mt-1 text-xl font-semibold">Live feed</div>
-                  </div>
-                  <GitBranch className="size-6 text-brand" />
-                </div>
-                <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
-                  {prs.slice(0, 6).map((p) => (
-                    <div key={p.id} className="flex items-start gap-2 text-xs">
-                      <span className="rounded-full bg-foreground px-2 py-0.5 font-mono text-background">PR #{p.number}</span>
-                      <span className="flex-1 line-clamp-1">{p.title}</span>
-                      <RiskBadge level={p.risk_level} />
-                    </div>
-                  ))}
-                  {recovery.slice(0, 3).map((r) => (
-                    <div key={r.id} className="flex items-start gap-2 text-xs text-muted-foreground">
-                      <ShieldCheck className="mt-0.5 size-3 text-coral" />
-                      <span className="flex-1 line-clamp-1">{r.recovery_action}</span>
-                    </div>
-                  ))}
-                  {prs.length === 0 && recovery.length === 0 && (
-                    <div className="text-xs text-muted-foreground">Nothing yet. Click "Run full demo" to start.</div>
-                  )}
-                </div>
+            <div className="rounded-3xl border border-border bg-card p-6 card-hover">
+              <div className="text-sm font-medium text-muted-foreground">Failure injection</div>
+              <p className="mt-1 text-xs text-muted-foreground">Simulate things breaking. ForgeCloud recovers.</p>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <FailButton onClick={() => triggerFailure("model_timeout")} busy={busy === "fail-model_timeout"} label="Model timeout" />
+                <FailButton onClick={() => triggerFailure("build_failed")} busy={busy === "fail-build_failed"} label="Build failed" />
+                <FailButton onClick={() => triggerFailure("secret_detected")} busy={busy === "fail-secret_detected"} label="Secret in code" />
+                <FailButton onClick={() => triggerFailure("unsafe_db_migration")} busy={busy === "fail-unsafe_db_migration"} label="Unsafe DB change" />
+                <FailButton onClick={() => triggerFailure("bad_output")} busy={busy === "fail-bad_output"} label="Bad agent output" />
+                <FailButton onClick={() => triggerFailure("agent_conflict")} busy={busy === "fail-agent_conflict"} label="Agent conflict" />
               </div>
             </div>
-          </>
-        )}
-      </div>
+          </div>
+
+          {/* Deployment + Activity feed */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-3xl border border-border bg-card p-6 card-hover">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium text-muted-foreground">Deployment</div>
+                  <div className="mt-1 text-xl font-semibold">Railway + Cloudflare</div>
+                </div>
+                <div className="flex size-10 items-center justify-center squircle" style={{ background: "var(--violet)" }}>
+                  <Rocket className="size-5 text-white" />
+                </div>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Production deploy requires build + QA + approval checks.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  onClick={() => deployProd(false)}
+                  disabled={busy !== null}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background hover:opacity-90 transition-all disabled:opacity-40"
+                >
+                  {busy === "deploy" ? <Loader2 className="size-3.5 animate-spin" /> : <Rocket className="size-3.5" />}
+                  Deploy to production
+                </button>
+                <button
+                  onClick={() => deployProd(true)}
+                  disabled={busy !== null}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-coral bg-coral/10 px-4 py-2 text-sm font-medium text-coral hover:bg-coral/20 transition-all disabled:opacity-40"
+                >
+                  {busy === "deploy-fail" ? <Loader2 className="size-3.5 animate-spin" /> : <AlertTriangle className="size-3.5" />}
+                  Simulate deploy failure
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-border bg-card p-6 card-hover">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium text-muted-foreground">Recent activity</div>
+                  <div className="mt-1 text-xl font-semibold">Live feed</div>
+                </div>
+                <div className="flex size-10 items-center justify-center squircle" style={{ background: "var(--sky)" }}>
+                  <GitBranch className="size-5 text-foreground" />
+                </div>
+              </div>
+              <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
+                {prs.slice(0, 6).map((p) => (
+                  <div key={p.id} className="flex items-start gap-2 text-xs">
+                    <span className="rounded-full bg-foreground px-2 py-0.5 font-mono text-background">PR #{p.number}</span>
+                    <span className="flex-1 line-clamp-1">{p.title}</span>
+                    <RiskBadge level={p.risk_level} />
+                  </div>
+                ))}
+                {recovery.slice(0, 3).map((r) => (
+                  <div key={r.id} className="flex items-start gap-2 text-xs text-muted-foreground">
+                    <ShieldCheck className="mt-0.5 size-3 text-coral" />
+                    <span className="flex-1 line-clamp-1">{r.recovery_action}</span>
+                  </div>
+                ))}
+                {prs.length === 0 && recovery.length === 0 && (
+                  <div className="text-xs text-muted-foreground">Nothing yet. Click "Run full demo" to start.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
-function Stat({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+function Stat({ label, value, sub, accent }: { label: string; value: string | number; sub?: string; accent?: string }) {
   return (
-    <div className="rounded-3xl border border-border bg-card p-5">
-      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+    <div className="rounded-3xl border border-border bg-card p-5 card-hover">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-medium text-muted-foreground">{label}</div>
+        {accent && <div className="size-2 rounded-full" style={{ background: accent }} />}
+      </div>
       <div className="mt-1 text-3xl font-bold">{value}</div>
       {sub && <div className="mt-1 text-xs text-muted-foreground">{sub}</div>}
     </div>
@@ -374,7 +383,7 @@ function FailButton({ onClick, busy, label }: { onClick: () => void; busy: boole
     <button
       onClick={onClick}
       disabled={busy}
-      className="flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-50"
+      className="flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium hover:bg-muted hover:border-coral/30 transition-all disabled:opacity-50"
     >
       {busy ? <Loader2 className="size-3 animate-spin" /> : <AlertTriangle className="size-3 text-amber" />}
       {label}

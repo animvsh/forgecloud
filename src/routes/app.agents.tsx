@@ -20,25 +20,16 @@ const typeColors: Record<string, string> = {
   recovery: "var(--violet)",
 };
 
-const typeIcons: Record<string, string> = {
-  product: "💡",
-  design: "🎨",
-  frontend: "🎨",
-  backend: "🛠",
-  auth: "🔐",
-  qa: "🧪",
-  devops: "🚀",
-  safety: "🛡",
-  recovery: "♻️",
-};
-
 function AgentsScreen() {
   const { data, isLoading } = useForgeState();
 
   if (isLoading || !data) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      <div className="flex h-[60vh] items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="size-6 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Loading agents...</p>
+        </div>
       </div>
     );
   }
@@ -49,13 +40,13 @@ function AgentsScreen() {
   const idle = agents.filter((a) => a.status === "idle").length;
 
   return (
-    <div className="min-h-screen">
+    <div>
       <ScreenHeader
         title="Agent team"
         subtitle={`${agents.length} agents · ${working} working · ${idle} idle`}
       />
 
-      <div className="p-8">
+      <div className="mt-6">
         {agents.length === 0 ? (
           <div className="rounded-3xl border-2 border-dashed border-border bg-card p-10 text-center">
             <Bot className="mx-auto size-10 text-muted-foreground" />
@@ -80,15 +71,17 @@ function AgentCard({ agent, tasks }: { agent: Agent; tasks: { title: string; sta
     try { return JSON.parse(agent.permissions); } catch { return { allowed: [], needsApproval: [] }; }
   })();
 
+  const color = typeColors[agent.type] ?? "var(--violet)";
+
   return (
-    <div className="rounded-3xl border border-border bg-card p-5">
+    <div className="rounded-3xl border border-border bg-card p-5 card-hover">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <div
-            className="flex size-10 items-center justify-center rounded-xl text-lg"
-            style={{ background: `${typeColors[agent.type] ?? "var(--violet)"}20` }}
+            className="flex size-10 items-center justify-center squircle"
+            style={{ background: color }}
           >
-            {typeIcons[agent.type] ?? "🤖"}
+            <Bot className="size-5 text-white" />
           </div>
           <div>
             <div className="font-semibold">{agent.name}</div>
@@ -122,7 +115,7 @@ function AgentCard({ agent, tasks }: { agent: Agent; tasks: { title: string; sta
 
       {currentTask && (
         <div className="mt-3 rounded-xl border border-brand/30 bg-brand/5 p-3 text-xs">
-          <div className="text-brand">Working on</div>
+          <div className="text-brand font-medium">Working on</div>
           <div className="mt-1 font-medium">{currentTask.title}</div>
         </div>
       )}

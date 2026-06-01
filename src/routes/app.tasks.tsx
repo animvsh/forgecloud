@@ -9,10 +9,10 @@ export const Route = createFileRoute("/app/tasks")({
 });
 
 const COLUMNS = [
-  { key: "backlog", label: "Backlog", tone: "var(--muted)" },
-  { key: "building", label: "Building", tone: "var(--sky)" },
-  { key: "review", label: "Review", tone: "var(--amber)" },
-  { key: "done", label: "Done", tone: "var(--mint)" },
+  { key: "backlog", label: "Backlog", tone: "var(--muted-foreground)", bg: "bg-muted" },
+  { key: "building", label: "Building", tone: "var(--sky)", bg: "bg-sky/10" },
+  { key: "review", label: "Review", tone: "var(--amber)", bg: "bg-amber/10" },
+  { key: "done", label: "Done", tone: "var(--mint)", bg: "bg-mint/10" },
 ] as const;
 
 function TasksScreen() {
@@ -23,8 +23,11 @@ function TasksScreen() {
 
   if (isLoading || !data) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      <div className="flex h-[60vh] items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="size-6 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Loading tasks...</p>
+        </div>
       </div>
     );
   }
@@ -35,26 +38,18 @@ function TasksScreen() {
 
   async function runOne(taskId: string, failureType?: string) {
     setRunning(taskId);
-    try {
-      await runTask.mutateAsync({ taskId, failureType });
-    } finally {
-      setRunning(null);
-    }
+    try { await runTask.mutateAsync({ taskId, failureType }); } finally { setRunning(null); }
   }
 
   async function runEverything(failureType?: string) {
     setRunning("all");
-    try {
-      await runAll.mutateAsync(failureType ? { failureType } : {});
-    } finally {
-      setRunning(null);
-    }
+    try { await runAll.mutateAsync(failureType ? { failureType } : {}); } finally { setRunning(null); }
   }
 
   const hasBacklog = tasks.some((t) => t.status === "backlog");
 
   return (
-    <div className="min-h-screen">
+    <div>
       <ScreenHeader
         title="Tasks"
         subtitle={`${tasks.length} tasks across ${new Set(tasks.map((t) => t.assigned_agent_id).filter(Boolean)).size} agents`}
@@ -64,7 +59,7 @@ function TasksScreen() {
               <button
                 onClick={() => runEverything("build_failed")}
                 disabled={running !== null}
-                className="inline-flex items-center gap-1.5 rounded-full border border-coral bg-coral/10 px-3 py-1.5 text-xs text-coral hover:bg-coral/20 disabled:opacity-40"
+                className="inline-flex items-center gap-1.5 rounded-full border border-coral bg-coral/10 px-3 py-1.5 text-xs text-coral hover:bg-coral/20 transition-all disabled:opacity-40"
               >
                 {running === "all" ? <Loader2 className="size-3 animate-spin" /> : <AlertTriangle className="size-3" />}
                 Run all (with failure)
@@ -72,7 +67,7 @@ function TasksScreen() {
               <button
                 onClick={() => runEverything()}
                 disabled={running !== null}
-                className="inline-flex items-center gap-1.5 rounded-full bg-brand px-3 py-1.5 text-xs text-brand-foreground hover:brightness-105 disabled:opacity-40"
+                className="inline-flex items-center gap-1.5 rounded-full bg-brand px-3 py-1.5 text-xs text-brand-foreground hover:brightness-105 transition-all disabled:opacity-40"
               >
                 {running === "all" ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
                 Run all
@@ -82,7 +77,7 @@ function TasksScreen() {
         }
       />
 
-      <div className="p-8">
+      <div className="mt-6">
         {tasks.length === 0 ? (
           <div className="rounded-3xl border-2 border-dashed border-border bg-card p-10 text-center">
             <p className="text-muted-foreground">No tasks yet. The Product Agent will create them when you start a project.</p>
@@ -93,19 +88,19 @@ function TasksScreen() {
               const colTasks = tasks.filter((t) => t.status === col.key);
               return (
                 <div key={col.key} className="rounded-2xl border border-border bg-card p-4">
-                  <div className="mb-3 flex items-center justify-between">
+                  <div className={`mb-3 flex items-center justify-between rounded-xl px-3 py-2 ${col.bg}`}>
                     <div className="flex items-center gap-2">
                       <span className="size-2 rounded-full" style={{ background: col.tone }} />
-                      <h3 className="font-semibold">{col.label}</h3>
+                      <h3 className="font-semibold text-sm">{col.label}</h3>
                     </div>
-                    <span className="text-xs text-muted-foreground">{colTasks.length}</span>
+                    <span className="rounded-full bg-background px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">{colTasks.length}</span>
                   </div>
                   <div className="space-y-2">
                     {colTasks.map((t) => {
                       const agent = agents.find((a) => a.id === t.assigned_agent_id);
                       const pr = prs.find((p) => p.id === t.linked_pr_id);
                       return (
-                        <div key={t.id} className="rounded-xl border border-border bg-background p-3 text-sm">
+                        <div key={t.id} className="rounded-xl border border-border bg-background p-3 text-sm card-hover">
                           <div className="flex items-start justify-between gap-2">
                             <div className="font-medium">{t.title}</div>
                             <RiskBadge level={t.risk_level} />
@@ -121,7 +116,7 @@ function TasksScreen() {
                             <button
                               onClick={() => runOne(t.id)}
                               disabled={running !== null}
-                              className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-xs font-medium text-background hover:opacity-90 disabled:opacity-40"
+                              className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-xs font-medium text-background hover:opacity-90 transition-all disabled:opacity-40"
                             >
                               {running === t.id ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
                               Build now
@@ -130,7 +125,7 @@ function TasksScreen() {
                           {pr && (
                             <Link
                               to="/app/changes"
-                              className="mt-2 inline-flex w-full items-center justify-between rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-muted"
+                              className="mt-2 inline-flex w-full items-center justify-between rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors"
                             >
                               <span>PR #{pr.number}</span>
                               <span className="text-muted-foreground">view →</span>

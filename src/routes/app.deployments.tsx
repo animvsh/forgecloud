@@ -90,65 +90,63 @@ function DeploymentsScreen() {
       />
 
       <div className="space-y-6 p-8">
-        <div className="rounded-3xl border border-border bg-card">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/40 text-left text-xs uppercase tracking-wider text-muted-foreground">
-              <tr>
-                <th className="px-5 py-3">Environment</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3">URL</th>
-                <th className="px-5 py-3">Deployed</th>
-                <th className="px-5 py-3 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(["preview", "staging", "production"] as const).map((env) => {
-                const d = deployments.find((dep) => dep.environment === env);
-                return (
-                  <tr key={env} className="border-t border-border">
-                    <td className="px-5 py-4 font-medium capitalize">{env}</td>
-                    <td className="px-5 py-4">
-                      {d ? (
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
-                          d.status === "live" ? "bg-mint/20 text-mint" :
-                          d.status === "failed" ? "bg-coral/20 text-coral" :
-                          "bg-amber/20 text-amber"
-                        }`}>
-                          {d.status}
-                        </span>
-                      ) : (
-                        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
-                          not deployed
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-5 py-4 font-mono text-xs">
-                      {d?.railway_url || d?.cloudflare_url || "—"}
-                    </td>
-                    <td className="px-5 py-4 text-xs text-muted-foreground">
-                      {d ? new Date(d.created_at).toLocaleString() : "—"}
-                    </td>
-                    <td className="px-5 py-4 text-right">
-                      {d && (d.railway_url || d.cloudflare_url) && (
-                        <a
-                          href={d.railway_url || d.cloudflare_url || "#"}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-xs text-brand hover:underline"
-                        >
-                          <ExternalLink className="size-3" /> Open
-                        </a>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="rounded-3xl border border-border bg-card overflow-hidden">
+          <div className="border-b border-border bg-muted/40 px-5 py-3">
+            <div className="grid grid-cols-12 text-xs uppercase tracking-wider text-muted-foreground">
+              <div className="col-span-2">Environment</div>
+              <div className="col-span-2">Status</div>
+              <div className="col-span-4">URL</div>
+              <div className="col-span-3">Deployed</div>
+              <div className="col-span-1 text-right">Action</div>
+            </div>
+          </div>
+          <div className="divide-y divide-border">
+            {(["preview", "staging", "production"] as const).map((env) => {
+              const d = deployments.find((dep) => dep.environment === env);
+              return (
+                <div key={env} className="grid grid-cols-12 items-center px-5 py-4 text-sm transition-colors hover:bg-muted/30">
+                  <div className="col-span-2 font-medium capitalize">{env}</div>
+                  <div className="col-span-2">
+                    {d ? (
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                        d.status === "live" ? "bg-mint/20 text-mint" :
+                        d.status === "failed" ? "bg-coral/20 text-coral" :
+                        "bg-amber/20 text-amber"
+                      }`}>
+                        {d.status}
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
+                        not deployed
+                      </span>
+                    )}
+                  </div>
+                  <div className="col-span-4 font-mono text-xs truncate">
+                    {d?.railway_url || d?.cloudflare_url || "—"}
+                  </div>
+                  <div className="col-span-3 text-xs text-muted-foreground">
+                    {d ? new Date(d.created_at).toLocaleString() : "—"}
+                  </div>
+                  <div className="col-span-1 text-right">
+                    {d && (d.railway_url || d.cloudflare_url) && (
+                      <a
+                        href={d.railway_url || d.cloudflare_url || "#"}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-brand hover:underline transition-colors"
+                      >
+                        <ExternalLink className="size-3" /> Open
+                      </a>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-3xl border border-border bg-card p-6">
+          <div className="rounded-3xl border border-border bg-card p-6 card-hover">
             <div className="flex items-center gap-2 text-sm font-medium">
               <ShieldCheck className="size-4 text-brand" />
               Pre-production checklist
@@ -167,7 +165,7 @@ function DeploymentsScreen() {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-border bg-card p-6">
+          <div className="rounded-3xl border border-border bg-card p-6 card-hover">
             <div className="flex items-center gap-2 text-sm font-medium">
               <GitBranch className="size-4 text-brand" />
               Latest deployment

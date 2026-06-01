@@ -140,13 +140,13 @@ function FailuresScreen() {
                 const Icon = ICONS[e.failure_type] ?? AlertTriangle;
                 const color = COLORS[e.failure_type] ?? "var(--amber)";
                 return (
-                  <div key={e.id} className="rounded-2xl border border-border bg-card p-5">
+                  <div key={e.id} className="rounded-2xl border border-border bg-card p-5 card-hover">
                     <div className="flex items-center gap-3">
                       <div
-                        className="flex size-9 items-center justify-center rounded-xl"
-                        style={{ background: `${color}25` }}
+                        className="flex size-10 items-center justify-center squircle"
+                        style={{ background: color }}
                       >
-                        <Icon className="size-4" style={{ color }} />
+                        <Icon className="size-5 text-white" />
                       </div>
                       <div className="flex-1">
                         <div className="font-semibold capitalize">{e.failure_type.replace(/_/g, " ")}</div>

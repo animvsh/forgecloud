@@ -1,26 +1,13 @@
-import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
-import { MessageSquare, Bot, ListChecks, Eye, GitBranch, ShieldAlert, Rocket, Users, FileText, Home, AlertTriangle } from "lucide-react";
+import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { AlertTriangle } from "lucide-react";
 import { useForgeState } from "@/lib/client";
+import { AppNav } from "@/components/SiteNav";
 
 export const Route = createFileRoute("/app")({
   component: AppLayout,
 });
 
-const nav = [
-  { to: "/app/index", label: "Home", icon: Home },
-  { to: "/app/chat", label: "Chat", icon: MessageSquare },
-  { to: "/app/agents", label: "Agents", icon: Bot },
-  { to: "/app/tasks", label: "Tasks", icon: ListChecks },
-  { to: "/app/changes", label: "Changes", icon: GitBranch },
-  { to: "/app/preview", label: "Preview", icon: Eye },
-  { to: "/app/deployments", label: "Deployments", icon: Rocket },
-  { to: "/app/failures", label: "Failures", icon: ShieldAlert },
-  { to: "/app/team", label: "Team", icon: Users },
-  { to: "/app/report", label: "Report", icon: FileText },
-] as const;
-
 function AppLayout() {
-  const { pathname } = useLocation();
   const { data } = useForgeState();
   const tasks = data?.tasks ?? [];
   const done = tasks.filter((t) => t.status === "done").length;
@@ -30,7 +17,7 @@ function AppLayout() {
   const isFallback = data && data.aiAvailable === false;
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="min-h-screen bg-background">
       {isFallback && (
         <div className="flex items-center justify-center gap-2 border-b border-amber/20 bg-amber/10 px-4 py-1.5 text-xs text-amber">
           <AlertTriangle className="size-3" />
@@ -39,49 +26,19 @@ function AppLayout() {
           </span>
         </div>
       )}
-      <div className="flex min-h-screen">
-        <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-card p-4">
-          <Link to="/" className="mb-6 flex items-center gap-2 px-2 py-1 font-semibold">
-            <span className="inline-block size-5 rounded-md bg-foreground" />
-            ForgeCloud
-          </Link>
-          <div className="mb-2 px-2 text-xs uppercase tracking-wider text-muted-foreground">Workspace</div>
-          <nav className="flex flex-col gap-1">
-            {nav.map((n) => {
-              const active = pathname === n.to;
-              return (
-                <Link
-                  key={n.to}
-                  to={n.to}
-                  className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition ${
-                    active ? "bg-foreground text-background" : "hover:bg-muted text-foreground"
-                  }`}
-                >
-                  <n.icon className="size-4" />
-                  {n.label}
-                  {n.label === "Failures" && pendingApprovals > 0 && (
-                    <span className="ml-auto rounded-full bg-coral px-2 py-0.5 text-[10px] font-semibold text-white">
-                      {pendingApprovals}
-                    </span>
-                  )}
-                </Link>
-              );
-            })}
-          </nav>
-          <div className="mt-auto rounded-2xl border border-border bg-background p-3">
-            <div className="text-xs font-medium">{data?.project?.name ?? "Untitled Project"}</div>
-            <div className="mt-1 text-xs text-muted-foreground">
-              {total === 0 ? "Not started" : `Building — ${pct}%`}
+      <AppNav pendingApprovals={pendingApprovals} />
+      <main className="mx-auto max-w-6xl px-4 pb-16 pt-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+        {total > 0 && (
+          <div className="mb-4 flex items-center gap-3 rounded-full border border-border bg-muted/50 px-4 py-1.5 text-xs">
+            <span className="font-medium">{data?.project?.name ?? "Project"}</span>
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-border/50">
+              <div className="h-full bg-brand transition-all duration-500" style={{ width: `${pct}%` }} />
             </div>
-            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-              <div className="h-full bg-brand transition-all" style={{ width: `${pct}%` }} />
-            </div>
+            <span className="text-muted-foreground">{pct}%</span>
           </div>
-        </aside>
-        <main className="flex-1 overflow-x-hidden">
-          <Outlet />
-        </main>
-      </div>
+        )}
+        <Outlet />
+      </main>
     </div>
   );
 }

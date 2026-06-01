@@ -80,18 +80,23 @@ function PreviewScreen() {
       />
 
       <div className="grid gap-4 p-8 lg:grid-cols-3">
-        <div className="lg:col-span-2 rounded-3xl border border-border bg-card overflow-hidden">
-          <div className="flex items-center justify-between border-b border-border bg-muted/40 px-5 py-3">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="lg:col-span-2 rounded-3xl border border-border bg-card overflow-hidden card-hover">
+          <div className="flex items-center justify-between border-b border-border bg-muted/60 px-5 py-3">
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
               <div className="flex items-center gap-1">
-                <div className="size-2 rounded-full bg-coral" />
-                <div className="size-2 rounded-full bg-amber" />
-                <div className="size-2 rounded-full bg-mint" />
+                <div className="size-2.5 rounded-full bg-coral" />
+                <div className="size-2.5 rounded-full bg-amber" />
+                <div className="size-2.5 rounded-full bg-mint" />
               </div>
-              <span className="font-mono">{liveDeployment?.railway_url || liveDeployment?.cloudflare_url || "preview.forgecloud.dev"}</span>
+              <div className="flex-1 max-w-xs rounded-lg bg-background/80 px-3 py-1 font-mono text-[11px] text-center">
+                {liveDeployment?.railway_url || liveDeployment?.cloudflare_url || "preview.forgecloud.dev"}
+              </div>
             </div>
             {liveDeployment && (
-              <div className="text-[10px] uppercase tracking-wider text-mint">● Live</div>
+              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-mint">
+                <div className="size-1.5 rounded-full bg-mint animate-pulse" />
+                Live
+              </div>
             )}
           </div>
 

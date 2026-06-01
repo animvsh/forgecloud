@@ -107,7 +107,7 @@ function ChangesScreen() {
             </div>
           ) : (
             prs.map((p) => (
-              <div key={p.id} className="rounded-3xl border border-border bg-card p-6">
+              <div key={p.id} className="rounded-3xl border border-border bg-card p-6 card-hover">
                 <div className="flex flex-wrap items-center gap-3">
                   <span className="rounded-full bg-foreground px-2.5 py-1 text-xs font-mono text-background">
                     PR #{p.number}
@@ -117,13 +117,13 @@ function ChangesScreen() {
                   <RiskPill level={p.risk_level} />
                   <StatusPill status={p.status} />
                   {p.preview_url && (
-                    <Link to="/app/preview" className="ml-auto inline-flex items-center gap-1 text-xs text-brand hover:underline">
+                    <Link to="/app/preview" className="ml-auto inline-flex items-center gap-1 text-xs text-brand hover:underline transition-colors">
                       <Eye className="size-3" /> Preview
                     </Link>
                   )}
                 </div>
                 <p className="mt-3 text-sm text-muted-foreground">{p.summary}</p>
-                <div className="mt-3 text-xs text-muted-foreground">
+                <div className="mt-3 rounded-xl border border-border bg-background p-3 text-xs font-mono text-muted-foreground">
                   {p.files_changed} file{p.files_changed !== 1 ? "s" : ""} changed
                   {p.approved_at && ` · Approved by ${p.approver_name} ${new Date(p.approved_at).toLocaleTimeString()}`}
                 </div>
@@ -132,15 +132,15 @@ function ChangesScreen() {
                     <button
                       onClick={() => approve(p.id)}
                       disabled={busy === p.id}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-mint px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110 disabled:opacity-40"
+                      className="inline-flex items-center gap-1.5 rounded-full bg-mint px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110 hover:scale-105 transition-all disabled:opacity-40"
                     >
                       {busy === p.id ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
                       Approve
                     </button>
-                    <button className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs hover:bg-muted">
+                    <button className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors">
                       <Undo2 className="size-3" /> Rollback
                     </button>
-                    <button className="rounded-full border border-border px-3 py-1.5 text-xs hover:bg-muted">
+                    <button className="rounded-full border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors">
                       View diff
                     </button>
                   </div>

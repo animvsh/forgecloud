@@ -35,22 +35,24 @@ function ChatScreen() {
   }
 
   return (
-    <div className="flex h-screen flex-col">
-      <ScreenHeader
-        title="Chat"
-        subtitle="Describe what to build. Your AI team takes it from here."
-        action={
-          data && !data.aiAvailable ? (
-            <span className="rounded-full border border-amber bg-amber/10 px-3 py-1 text-xs text-amber">
-              <AlertTriangle className="mr-1 inline size-3" />
-              Fallback AI mode
-            </span>
-          ) : null
-        }
-      />
+    <div className="flex h-[calc(100vh-8rem)] flex-col">
+      <div className="rounded-3xl border border-border gradient-header px-6 py-4 mb-4">
+        <ScreenHeader
+          title="Chat"
+          subtitle="Describe what to build. Your AI team takes it from here."
+          action={
+            data && !data.aiAvailable ? (
+              <span className="rounded-full border border-amber bg-amber/10 px-3 py-1 text-xs text-amber">
+                <AlertTriangle className="mr-1 inline size-3" />
+                Fallback AI mode
+              </span>
+            ) : null
+          }
+        />
+      </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-8 py-8">
-        <div className="mx-auto max-w-3xl space-y-6">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-3xl space-y-4 pb-4">
           {isLoading && (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="size-6 animate-spin text-muted-foreground" />
@@ -58,9 +60,11 @@ function ChatScreen() {
           )}
 
           {data && data.chatMessages.length === 0 && !hasProject && (
-            <div className="rounded-3xl border-2 border-dashed border-border bg-card p-8 text-center">
-              <Sparkles className="mx-auto size-8 text-brand" />
-              <h2 className="mt-3 text-xl font-semibold">What do you want to build?</h2>
+            <div className="rounded-3xl border-2 border-dashed border-border bg-card p-8 text-center card-hover animate-in fade-in">
+              <div className="mx-auto flex size-12 items-center justify-center squircle" style={{ background: "var(--violet)" }}>
+                <Sparkles className="size-6 text-white" />
+              </div>
+              <h2 className="mt-4 text-xl font-semibold">What do you want to build?</h2>
               <p className="mt-2 text-sm text-muted-foreground">
                 Type any product idea. The Product Agent will turn it into a build plan.
               </p>
@@ -69,7 +73,7 @@ function ChatScreen() {
                   <button
                     key={p}
                     onClick={() => handleSend(p)}
-                    className="rounded-2xl border border-border bg-background p-4 text-left text-sm hover:border-brand"
+                    className="rounded-2xl border border-border bg-background p-4 text-left text-sm hover:border-brand hover:shadow-md transition-all"
                   >
                     {p}
                   </button>
@@ -86,13 +90,13 @@ function ChatScreen() {
               <div className="mt-4 grid gap-2 sm:grid-cols-2">
                 <button
                   onClick={() => handleSend("Add a phone number field to the lead form")}
-                  className="rounded-xl border border-border bg-background p-3 text-left text-xs hover:border-brand"
+                  className="rounded-xl border border-border bg-background p-3 text-left text-xs hover:border-brand transition-all"
                 >
                   Add a phone number field to the lead form
                 </button>
                 <button
                   onClick={() => handleSend("Add a search bar to the dashboard")}
-                  className="rounded-xl border border-border bg-background p-3 text-left text-xs hover:border-brand"
+                  className="rounded-xl border border-border bg-background p-3 text-left text-xs hover:border-brand transition-all"
                 >
                   Add a search bar to the dashboard
                 </button>
@@ -103,8 +107,8 @@ function ChatScreen() {
           {data?.chatMessages.map((m) => {
             if (m.role === "user") {
               return (
-                <div key={m.id} className="flex justify-end">
-                  <div className="max-w-xl rounded-3xl bg-foreground px-5 py-3 text-background">
+                <div key={m.id} className="flex justify-end animate-in fade-in slide-in-from-right-2">
+                  <div className="max-w-xl rounded-3xl bg-gradient-to-br from-foreground to-foreground/90 px-5 py-3 text-background shadow-md">
                     {m.content}
                   </div>
                 </div>
@@ -116,7 +120,7 @@ function ChatScreen() {
             if (meta?.kind === "plan" && meta.plan) {
               const plan = meta.plan;
               return (
-                <div key={m.id} className="space-y-3">
+                <div key={m.id} className="space-y-3 animate-in fade-in slide-in-from-left-2">
                   <Message from="ForgeCloud">
                     <div className="flex items-center gap-2 text-sm font-medium">
                       <Sparkles className="size-4 text-brand" />
@@ -152,13 +156,13 @@ function ChatScreen() {
                     <div className="mt-4 flex flex-wrap gap-2">
                       <Link
                         to="/app/tasks"
-                        className="inline-flex items-center gap-1.5 rounded-full bg-brand px-4 py-2 text-xs font-medium text-brand-foreground"
+                        className="inline-flex items-center gap-1.5 rounded-full bg-brand px-4 py-2 text-xs font-medium text-brand-foreground hover:brightness-105 transition-all"
                       >
                         Approve & start building
                       </Link>
                       <Link
                         to="/app/agents"
-                        className="inline-flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-xs hover:bg-muted"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-xs hover:bg-muted transition-colors"
                       >
                         See the team
                       </Link>
@@ -193,34 +197,32 @@ function ChatScreen() {
         </div>
       </div>
 
-      <div className="border-t border-border bg-card px-8 py-4">
-        <div className="mx-auto max-w-3xl">
-          <form
-            onSubmit={(e) => { e.preventDefault(); handleSend(input); }}
-            className="flex items-end gap-2"
+      <div className="rounded-2xl border border-border bg-card p-2 mt-2">
+        <form
+          onSubmit={(e) => { e.preventDefault(); handleSend(input); }}
+          className="flex items-end gap-2"
+        >
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend(input);
+              }
+            }}
+            placeholder="Describe what to build next. The AI team handles the rest."
+            className="flex-1 resize-none rounded-xl border-0 bg-transparent px-4 py-3 outline-none placeholder:text-muted-foreground"
+            rows={2}
+          />
+          <button
+            type="submit"
+            disabled={!input.trim() || send.isPending}
+            className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-brand to-violet text-white shadow-md hover:shadow-lg hover:scale-105 transition-all disabled:opacity-30 disabled:hover:scale-100"
           >
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend(input);
-                }
-              }}
-              placeholder="Describe what to build next. The AI team handles the rest."
-              className="flex-1 resize-none rounded-2xl border border-border bg-background px-4 py-3 outline-none focus:border-brand"
-              rows={2}
-            />
-            <button
-              type="submit"
-              disabled={!input.trim() || send.isPending}
-              className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-foreground text-background hover:opacity-90 disabled:opacity-30"
-            >
-              <ArrowUp className="size-5" />
-            </button>
-          </form>
-        </div>
+            <ArrowUp className="size-5" />
+          </button>
+        </form>
       </div>
     </div>
   );
@@ -228,12 +230,12 @@ function ChatScreen() {
 
 function Message({ from, children }: { from: string; children: React.ReactNode }) {
   return (
-    <div className="flex gap-3">
+    <div className="flex gap-3 animate-in fade-in slide-in-from-left-2">
       <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-violet/15 text-violet">
         <Bot className="size-4" />
       </div>
-      <div className="flex-1 rounded-3xl border border-border bg-card p-5 text-sm">
-        <div className="text-xs text-muted-foreground">{from}</div>
+      <div className="flex-1 rounded-3xl border border-border bg-card p-5 text-sm card-hover">
+        <div className="text-xs font-medium text-muted-foreground">{from}</div>
         <div className="mt-1">{children}</div>
       </div>
     </div>

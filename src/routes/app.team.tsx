@@ -45,22 +45,27 @@ function TeamScreen() {
         <section>
           <h2 className="mb-4 text-lg font-semibold">Humans</h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {humans.map((m) => (
-              <div key={m.id} className="rounded-2xl border border-border bg-card p-5">
-                <div className="flex items-center gap-3">
-                  <div className="flex size-10 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background">
-                    {m.display_name.slice(0, 1).toUpperCase()}
+            {humans.map((m) => {
+              const colors = ["var(--violet)", "var(--coral)", "var(--sky)", "var(--mint)", "var(--amber)"];
+              const color = colors[m.display_name.charCodeAt(0) % colors.length];
+              return (
+                <div key={m.id} className="rounded-2xl border border-border bg-card p-5 card-hover">
+                  <div className="flex items-center gap-3">
+                    <div className="flex size-10 items-center justify-center squircle text-sm font-semibold text-white" style={{ background: color }}>
+                      {m.display_name.slice(0, 1).toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="font-semibold">{m.display_name}</div>
+                      <div className="text-xs text-muted-foreground capitalize">{m.role}</div>
+                    </div>
+                    <span className="ml-auto rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">{m.role}</span>
                   </div>
-                  <div>
-                    <div className="font-semibold">{m.display_name}</div>
-                    <div className="text-xs text-muted-foreground capitalize">{m.role}</div>
+                  <div className="mt-3 text-xs text-muted-foreground">
+                    Can request features, review changes, approve assigned PRs.
                   </div>
                 </div>
-                <div className="mt-3 text-xs text-muted-foreground">
-                  Can request features, review changes, approve assigned PRs.
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
 
@@ -69,16 +74,23 @@ function TeamScreen() {
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {aiMembers.map((a) => {
               const def = AI_ROLES.find((r) => r.name === a.name);
+              const colors: Record<string, string> = {
+                product: "var(--violet)", design: "var(--coral)", frontend: "var(--sky)",
+                backend: "var(--mint)", auth: "var(--amber)", qa: "var(--sky)",
+                devops: "var(--mint)", safety: "var(--amber)", recovery: "var(--violet)",
+              };
+              const color = colors[a.type] ?? "var(--violet)";
               return (
-                <div key={a.id} className="rounded-2xl border border-border bg-card p-5">
+                <div key={a.id} className="rounded-2xl border border-border bg-card p-5 card-hover">
                   <div className="flex items-center gap-3">
-                    <div className="flex size-10 items-center justify-center rounded-full bg-violet/15 text-violet">
-                      <Bot className="size-5" />
+                    <div className="flex size-10 items-center justify-center squircle" style={{ background: color }}>
+                      <Bot className="size-5 text-white" />
                     </div>
                     <div>
                       <div className="font-semibold">{a.name}</div>
                       <div className="text-xs text-muted-foreground">{a.type}</div>
                     </div>
+                    <span className="ml-auto rounded-full bg-violet/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-violet">AI</span>
                   </div>
                   <div className="mt-3 space-y-1 text-xs">
                     <div className="text-muted-foreground">
@@ -99,7 +111,7 @@ function TeamScreen() {
         <section>
           <h2 className="mb-4 text-lg font-semibold">Permission model</h2>
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-3xl border border-border bg-card p-6">
+            <div className="rounded-3xl border border-border bg-card p-6 card-hover">
               <div className="text-sm font-medium text-muted-foreground">Human roles</div>
               <table className="mt-3 w-full text-sm">
                 <tbody>
@@ -112,7 +124,7 @@ function TeamScreen() {
                 </tbody>
               </table>
             </div>
-            <div className="rounded-3xl border border-border bg-card p-6">
+            <div className="rounded-3xl border border-border bg-card p-6 card-hover">
               <div className="text-sm font-medium text-muted-foreground">Simple, legible permissions</div>
               <ul className="mt-3 space-y-1 text-sm text-muted-foreground">
                 <li className="flex items-center gap-2"><span className="size-1.5 rounded-full bg-mint" /> Can request features</li>
