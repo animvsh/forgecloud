@@ -21,7 +21,7 @@ export const AGENT_DEFS = [
 
 export type AgentType = (typeof AGENT_DEFS)[number]["type"];
 
-const AGENT_PERMS: Record<string, { allowed: string[]; needsApproval: string[] }> = {
+export const AGENT_PERMS: Record<string, { allowed: string[]; needsApproval: string[] }> = {
   product: { allowed: ["create_tasks", "edit_specs"], needsApproval: ["delete_tasks"] },
   design: { allowed: ["edit_ui_files"], needsApproval: ["major_brand_changes"] },
   frontend: { allowed: ["edit_frontend_files"], needsApproval: ["production_deploy"] },
@@ -165,6 +165,7 @@ export async function runAgentOnTask(
   db.prepare(`UPDATE tasks SET status = 'building' WHERE id = ?`).run(taskId);
   if (agent) {
     updateAgentStatus(agent.id, "working", `Building: ${task.title}`);
+    db.prepare(`UPDATE agents SET current_task_id = ? WHERE id = ?`).run(taskId, agent.id);
   }
 
   const runId = ids.newRun();
@@ -176,38 +177,57 @@ export async function runAgentOnTask(
     task.project_id,
     agent?.id ?? "unknown",
     taskId,
-    `Build feature: ${task.title}`,
+    `Build: ${task.title}`,
     agent?.model_primary ?? PRIMARY_MODEL,
     Date.now(),
   );
 
-  if (failureType === "model_timeout") {
-    const recovery = await triggerFailure(
-      task.project_id,
-      runId,
-      "model_timeout",
-      `${agent?.name ?? "Agent"} timed out on "${task.title}"`,
-      `Switched to fallback model (${FALLBACK_MODEL}) and continued from saved state`,
-    );
-    db.prepare(
-      `UPDATE agent_runs SET status = 'recovered', fallback_used = 1, completed_at = ? WHERE id = ?`,
-    ).run(Date.now(), runId);
-    return { task, recovery };
+  let result: { task: Task; pr?: PullRequest; recovery?: RecoveryEvent };
+  try {
+    if (failureType === "model_timeout") {
+      const recovery = await triggerFailure(
+        task.project_id,
+        runId,
+        "model_timeout",
+        `${agent?.name ?? "Agent"} timed out on "${task.title}"`,
+        `Switched to fallback model (${FALLBACK_MODEL}) and continued from saved state`,
+      );
+      db.prepare(
+        `UPDATE agent_runs SET status = 'recovered', fallback_used = 1, completed_at = ? WHERE id = ?`,
+      ).run(Date.now(), runId);
+      db.prepare(`UPDATE tasks SET status = 'backlog' WHERE id = ?`).run(taskId);
+      result = { task, recovery };
+    } else if (failureType === "build_failed") {
+      const recovery = await triggerFailure(
+        task.project_id,
+        runId,
+        "build_failed",
+        `Build failed on "${task.title}" — TypeScript or lint error`,
+        "QA Agent isolated the bad file, Frontend Agent shipped a fix, build re-ran successfully",
+      );
+      db.prepare(
+        `UPDATE agent_runs SET status = 'recovered', completed_at = ? WHERE id = ?`,
+      ).run(Date.now(), runId);
+      db.prepare(`UPDATE tasks SET status = 'backlog' WHERE id = ?`).run(taskId);
+      result = { task, recovery };
+    } else {
+      result = await runTaskSuccess(task, agent, runId);
+    }
+    return result;
+  } finally {
+    // P0-6 + P0-7: always clear agent's current_task_id and idle it, regardless of how we exited.
+    if (agent) {
+      db.prepare(`UPDATE agents SET current_task_id = NULL, status = 'idle' WHERE id = ?`).run(agent.id);
+    }
   }
+}
 
-  if (failureType === "build_failed") {
-    const recovery = await triggerFailure(
-      task.project_id,
-      runId,
-      "build_failed",
-      `Build failed on "${task.title}" — TypeScript or lint error`,
-      "QA Agent isolated the bad file, Frontend Agent shipped a fix, build re-ran successfully",
-    );
-    db.prepare(
-      `UPDATE agent_runs SET status = 'recovered', completed_at = ? WHERE id = ?`,
-    ).run(Date.now(), runId);
-    return { task, recovery };
-  }
+async function runTaskSuccess(
+  task: Task,
+  agent: Agent | undefined,
+  runId: string,
+): Promise<{ task: Task; pr: PullRequest }> {
+  const db = getDb();
 
   const summary = await generatePrSummary(
     task.title,
@@ -316,9 +336,7 @@ export async function runAgentOnTask(
     }
   }
 
-  if (agent) {
-    updateAgentStatus(agent.id, "idle", `Shipped PR #${prNumber}: ${task.title}`);
-  }
+  // Agent idle state and current_task_id clear is handled by the finally block in runAgentOnTask.
   db.prepare(
     `UPDATE agent_runs SET status = 'completed', output_summary = ?, completed_at = ? WHERE id = ?`,
   ).run(`Shipped PR #${prNumber}`, Date.now(), runId);
@@ -326,7 +344,6 @@ export async function runAgentOnTask(
   const pr = db.prepare("SELECT * FROM pull_requests WHERE id = ?").get(prId) as PullRequest;
   return { task, pr };
 }
-
 function extractColumnHint(title: string, desc: string): string {
   const text = `${title} ${desc}`.toLowerCase();
   const match = text.match(/add(?:ing)?\s+(?:a\s+)?(\w+)\s+(?:column|field)/);

@@ -26,9 +26,16 @@ function DeploymentsScreen() {
   const prs = data.prs.filter((p) => p.status === "approved");
   const approvedCount = prs.length;
   const pendingApprovals = data.approvals.length;
-  const buildPassed = true;
-  const testsPassed = true;
-  const secretsClean = data.recovery.filter((r) => r.failure_type === "secret_detected" && r.status === "blocked").length === 0;
+  // Only unresolved recoveries (status === "blocked" / "investigating") gate the deploy.
+  // "recovered" means the safety/recovery agent already handled it.
+  const activeRecovery = data.recovery.filter((r) => r.status !== "recovered");
+  const buildPassed = !activeRecovery.some((r) => r.failure_type === "build_failed");
+  const testsPassed = !activeRecovery.some((r) => r.failure_type === "bad_output");
+  // P0-8: scope to recovery events from approved PRs only (not the whole project history).
+  const approvedPrIds = new Set(prs.map((p) => p.id));
+  const secretsClean = !data.recovery.some(
+    (r) => r.failure_type === "secret_detected" && r.status === "blocked" && (!r.pr_id || approvedPrIds.has(r.pr_id)),
+  );
   const lastDeploy = deployments[0];
   const previousLive = deployments.find((d, i) => i > 0 && d.environment === "production" && d.status === "live");
 

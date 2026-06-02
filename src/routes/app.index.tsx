@@ -10,7 +10,7 @@ export const Route = createFileRoute("/app/")({
 });
 
 const DEMO_STEPS = [
-  { key: "init", label: "Initializing Pielot Waitlist" },
+  { key: "init", label: "Initializing Pleasure Pizza Ops" },
   { key: "run-agents", label: "Running all 9 agents on backlog" },
   { key: "model-timeout", label: "Triggering model timeout" },
   { key: "build-failure", label: "Triggering build failure" },

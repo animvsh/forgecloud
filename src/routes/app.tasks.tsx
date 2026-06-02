@@ -13,6 +13,7 @@ const AGENT_OPTIONS = [
   "Auth Agent",
   "DevOps Agent",
   "Safety Agent",
+  "Recovery Agent",
   "Product Agent",
 ] as const;
 

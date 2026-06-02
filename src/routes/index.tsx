@@ -99,8 +99,10 @@ function Landing() {
                           <button onClick={() => setShowReset(false)} className="rounded-full border border-border px-4 py-2 text-sm hover:bg-muted">Cancel</button>
                           <button
                             onClick={async () => { await reset.mutateAsync(); setShowReset(false); navigate({ to: "/app" }); }}
-                            className="rounded-full bg-coral px-4 py-2 text-sm font-medium text-white hover:brightness-110"
+                            disabled={reset.isPending}
+                            className="inline-flex items-center gap-2 rounded-full bg-coral px-4 py-2 text-sm font-medium text-white hover:brightness-110 disabled:opacity-50"
                           >
+                            {reset.isPending && <Loader2 className="size-3.5 animate-spin" />}
                             Reset
                           </button>
                         </div>

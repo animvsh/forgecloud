@@ -152,7 +152,7 @@ function SettingsScreen() {
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
                       This deletes all tasks, PRs, recovery events, deployments, and chat history
-                      for the current project and re-seeds the Pielot Waitlist demo. This cannot be
+                      for the current project and re-seeds the Pleasure Pizza Ops demo. This cannot be
                       undone.
                     </p>
                     <div className="mt-3 flex items-center gap-2">

@@ -30,8 +30,8 @@ type Branch = {
   head_pr_id: string | null;
   status: "active" | "merged" | "archived";
   created_by_agent_id: string | null;
-  created_at: string;
-  merged_at: string | null;
+  created_at: number;
+  merged_at: number | null;
 };
 
 type Commit = {
@@ -42,7 +42,7 @@ type Commit = {
   message: string;
   author: string;
   files_changed: number;
-  created_at: string;
+  created_at: number;
 };
 
 type Worktree = {
@@ -52,16 +52,16 @@ type Worktree = {
   status: string;
   assigned_agent_id: string | null;
   preview_url: string | null;
-  created_at: string;
+  created_at: number;
 };
 
 type Agent = { id: string; name: string; role?: string };
 type PR = { id: string; number: number; title: string };
 
-function relativeTime(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "—";
-  const diff = Date.now() - then;
+function relativeTime(ms: number): string {
+  if (typeof ms !== "number" || !Number.isFinite(ms) || ms <= 0) return "—";
+  const diff = Date.now() - ms;
+  if (diff < 0) return "just now";
   if (diff < 60_000) return "just now";
   const mins = Math.floor(diff / 60_000);
   if (mins < 60) return `${mins}m ago`;
@@ -106,7 +106,7 @@ function BranchesScreen() {
   const activeWorktrees = worktrees.filter((w) => w.status === "active");
 
   const sortedCommits = [...commits].sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    (a, b) => b.created_at - a.created_at,
   );
 
   async function onMerge(branchId: string) {
