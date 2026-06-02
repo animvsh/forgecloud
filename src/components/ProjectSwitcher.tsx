@@ -79,7 +79,11 @@ export function ProjectSwitcher() {
                   type="button"
                   onClick={() => {
                     setOpen(false);
-                    toast.info(`Project switching is read-only in this demo — "${p.name}" is already the active workspace.`);
+                    if (active) {
+                      toast.info(`"${p.name}" is the active project.`);
+                    } else {
+                      toast.info(`This demo runs on a single project. "${p.name}" is read-only — call /api/reset to clear extras.`);
+                    }
                   }}
                   className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors flex items-center gap-2 ${active ? "bg-muted/60" : ""}`}
                 >

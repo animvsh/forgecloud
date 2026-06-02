@@ -549,8 +549,45 @@ async function handleSkipToDemo(
   res: ServerResponse,
   requestId: string,
 ): Promise<void> {
+  const d = getDb();
+  // Wipe any non-canonical projects so the switcher doesn't accumulate phantom
+  // entries from past /api/intake or /api/projects calls.
+  const nonCanonical = d
+    .prepare(`SELECT id FROM projects WHERE id != ?`)
+    .all(DEMO_PROJECT_ID) as { id: string }[];
+  for (const { id: pid } of nonCanonical) {
+    d.prepare(
+      `DELETE FROM changes WHERE pr_id IN (SELECT id FROM pull_requests WHERE project_id = ?)`,
+    ).run(pid);
+    for (const t of [
+      "chat_messages",
+      "approvals",
+      "deployments",
+      "recovery_events",
+      "agent_runs",
+      "pull_requests",
+      "tasks",
+      "agents",
+      "preview_comments",
+      "worktrees",
+      "commits",
+      "branches",
+    ])
+      d.prepare(`DELETE FROM ${t} WHERE project_id = ?`).run(pid);
+    d.prepare(`DELETE FROM notifications WHERE project_id = ?`).run(pid);
+    d.prepare(`DELETE FROM projects WHERE id = ?`).run(pid);
+  }
+  // Re-seed the canonical demo project to a known good state. This restores
+  // its PRD-canonical name + fresh tasks/PRs/agents so the rest of the app
+  // (Tasks, Agents, PRs, Preview) shows the same content the demo screenshot
+  // walkthrough uses.
   ensureSeed();
-  sendJson(res, 200, { ok: true }, requestId);
+  try {
+    seedDemoProject();
+  } catch (err) {
+    // If re-seed fails (e.g. data race), the project still exists from ensureSeed.
+  }
+  sendJson(res, 200, { ok: true, project: "proj-pleasure-pizza" }, requestId);
 }
 
 const InjectFailureSchema = z.object({
