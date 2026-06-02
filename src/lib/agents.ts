@@ -3,6 +3,7 @@ import { ensureSeed, ids } from "./seed";
 import { classifyRisk, generatePrSummary, narrateRecovery } from "./ai";
 import { getProvider } from "./providers";
 import { createNotification, findOrCreateBranchByName, recordCommit } from "./vcs";
+import { log as logger } from "./logger";
 
 const PRIMARY_MODEL = getProvider()?.primaryModel ?? "MiniMax-Text-01";
 const FALLBACK_MODEL = getProvider()?.fallbackModel ?? "MiniMax-M1";
@@ -211,7 +212,27 @@ export async function runAgentOnTask(
       db.prepare(`UPDATE tasks SET status = 'backlog' WHERE id = ?`).run(taskId);
       result = { task, recovery };
     } else {
-      result = await runTaskSuccess(task, agent, runId);
+      try {
+        result = await runTaskSuccess(taskId, task, agent, runId);
+      } catch (err) {
+        // P0-7 reinforcement: if the success path itself throws (code bug, model error, etc.)
+        // the task must NOT stay in "building" — return it to backlog with a recovery event
+        // so the user can retry it, and the agent's current_task_id is cleared by the finally.
+        const msg = (err as Error)?.message ?? String(err);
+        logger.error({ err, runId, taskId }, "runTaskSuccess threw — resetting task to backlog");
+        const recovery = await triggerFailure(
+          task.project_id,
+          runId,
+          "build_failed",
+          `${agent?.name ?? "Agent"} encountered an unexpected error on "${task.title}": ${msg}`,
+          "Task was returned to the backlog. Review the error, then click Build now to retry.",
+        );
+        db.prepare(
+          `UPDATE agent_runs SET status = 'recovered', output_summary = ?, completed_at = ? WHERE id = ?`,
+        ).run(`Error: ${msg.slice(0, 200)}`, Date.now(), runId);
+        db.prepare(`UPDATE tasks SET status = 'backlog' WHERE id = ?`).run(taskId);
+        result = { task, recovery };
+      }
     }
     return result;
   } finally {
@@ -223,6 +244,7 @@ export async function runAgentOnTask(
 }
 
 async function runTaskSuccess(
+  taskId: string,
   task: Task,
   agent: Agent | undefined,
   runId: string,
