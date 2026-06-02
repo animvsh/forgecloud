@@ -499,10 +499,11 @@ const SECRET_PATTERNS = [
   /sk-(?:proj-|ant-|test-|live-|org-)[A-Za-z0-9_\-]{16,}/i,
   // Anthropic API keys: sk-ant-api03-…
   /sk-ant-api03-[A-Za-z0-9_\-]{20,}/i,
-  // Stripe live + test keys
-  /sk_(?:live|test)_[A-Za-z0-9]{16,}/i,
-  /pk_(?:live|test)_[A-Za-z0-9]{16,}/i,
-  /rk_(?:live|test)_[A-Za-z0-9]{16,}/i,
+  // Stripe live + test + restricted keys (real ones are much longer, but
+  // 12 alphanum is the minimum to avoid false positives like "sk_live_xyz123")
+  /sk_(?:live|test)_[A-Za-z0-9]{12,}/i,
+  /pk_(?:live|test)_[A-Za-z0-9]{12,}/i,
+  /rk_(?:live|test)_[A-Za-z0-9]{12,}/i,
   // AWS access key id (AKIA / ASIA prefix + 16 uppercase)
   /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/,
   // Google API key
