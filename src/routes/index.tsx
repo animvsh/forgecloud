@@ -74,7 +74,7 @@ function Landing() {
                     to="/app"
                     className="rounded-full border border-border bg-card px-6 py-3.5 font-medium hover:bg-muted"
                   >
-                    Try the demo
+                    View demo project
                   </Link>
                   <Link
                     to="/app/chat"
@@ -110,7 +110,7 @@ function Landing() {
                 </>
               ) : (
                 <Link to="/app" className="rounded-full border border-border bg-card px-6 py-3.5 font-medium hover:bg-muted">
-                  Try the demo
+                  View demo project
                 </Link>
               )}
             </div>
@@ -222,7 +222,7 @@ function Landing() {
                 Start building <ArrowRight className="size-4" />
               </Link>
               <Link to="/app" className="rounded-full border border-border bg-card px-6 py-3.5 font-medium hover:bg-muted">
-                Try the demo
+                View demo project
               </Link>
             </div>
           </div>

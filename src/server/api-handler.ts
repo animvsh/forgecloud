@@ -21,6 +21,7 @@ import {
   createTasksFromPlan,
   decideApproval,
   detectSecret,
+  detectGuardrailViolation,
   getAgents,
   getApprovalQueue,
   getProject,
@@ -367,15 +368,46 @@ async function handleChat(
     `INSERT INTO chat_messages (id, project_id, role, content) VALUES (?, ?, 'user', ?)`,
   ).run(ids.newMessage(), projectId, message);
 
-  const secret = detectSecret(message);
-  if (secret) {
-    recordSecretBlock(projectId, null, secret);
+  const hit = detectGuardrailViolation(message);
+  if (hit) {
+    // Map the broader guardrail rules onto the existing recovery_events model.
+    if (hit.kind === "secret") {
+      recordSecretBlock(projectId, null, hit.match);
+    } else {
+      const dDb = getDb();
+      dDb.prepare(
+        `INSERT INTO recovery_events (id, project_id, agent_run_id, failure_type, failure_message, recovery_action, status, created_at)
+         VALUES (?, ?, NULL, 'guardrail_blocked', ?, 'Safety Agent blocked this — flagged as dangerous before any agent ran it.', 'blocked', ?)`,
+      ).run(ids.newRecovery(), projectId, `${hit.title}: matched "${hit.match.slice(0, 60)}"`, Date.now());
+      // Notify the workspace bell too.
+      const wsRow = dDb
+        .prepare("SELECT workspace_id FROM projects WHERE id = ?")
+        .get(projectId) as { workspace_id: string } | undefined;
+      if (wsRow) {
+        const { createNotification } = await import("../lib/vcs");
+        createNotification({
+          workspaceId: wsRow.workspace_id,
+          projectId,
+          kind: "secret_blocked",
+          title: `Safety Agent blocked: ${hit.title}`,
+          body: `Matched "${hit.match.slice(0, 80)}". Edit your request and try again.`,
+          link: "/app/failures",
+        });
+      }
+    }
     const reply =
-      "Safety Agent blocked this — looks like a hardcoded credential in your message. Use environment variables instead.";
+      hit.kind === "secret"
+        ? "Safety Agent blocked this — looks like a hardcoded credential in your message. Use environment variables instead."
+        : `Safety Agent blocked this — it looked like: ${hit.title}. Rewrite your request without that pattern.`;
     d.prepare(
       `INSERT INTO chat_messages (id, project_id, role, content, metadata) VALUES (?, ?, 'assistant', ?, ?)`,
-    ).run(ids.newMessage(), projectId, reply, JSON.stringify({ kind: "secret_block" }));
-    return sendJson(res, 200, { reply, blocked: true }, requestId);
+    ).run(
+      ids.newMessage(),
+      projectId,
+      reply,
+      JSON.stringify({ kind: hit.kind === "secret" ? "secret_block" : "guardrail_block", rule: hit.kind, title: hit.title }),
+    );
+    return sendJson(res, 200, { reply, blocked: true, rule: hit }, requestId);
   }
 
   const project = getProject(projectId)!;

@@ -121,6 +121,7 @@ function initSchema(db: Database.Database) {
       source_branch TEXT NOT NULL,
       target_branch TEXT NOT NULL DEFAULT 'main',
       preview_url TEXT,
+      screenshot_url TEXT,
       requires_approval INTEGER NOT NULL DEFAULT 0,
       approver_name TEXT,
       approved_at INTEGER,
@@ -320,6 +321,9 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_commits_branch ON commits(branch_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_worktrees_project ON worktrees(project_id, status);
   `);
+
+  // Defensive migrations for columns added after release.
+  try { db.exec(`ALTER TABLE pull_requests ADD COLUMN screenshot_url TEXT`); } catch {}
 }
 
 export type User = {
@@ -408,6 +412,7 @@ export type PullRequest = {
   source_branch: string;
   target_branch: string;
   preview_url: string | null;
+  screenshot_url: string | null;
   requires_approval: number;
   approver_name: string | null;
   approved_at: number | null;

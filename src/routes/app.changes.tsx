@@ -10,6 +10,7 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   Clock,
   Minus,
   FileCode2,
@@ -60,6 +61,7 @@ type PR = {
   status: string;
   files_changed: number;
   preview_url?: string | null;
+  screenshot_url?: string | null;
   approved_at?: string | null;
   approver_name?: string | null;
   requires_approval: number;
@@ -86,6 +88,7 @@ function ChangesScreen() {
   const [confirmRollbackId, setConfirmRollbackId] = useState<string | null>(null);
   const [rollingBackId, setRollingBackId] = useState<string | null>(null);
   const [expandedChanges, setExpandedChanges] = useState<Record<string, boolean>>({});
+  const [expandedDiffs, setExpandedDiffs] = useState<Record<string, boolean>>({});
   const [editsDraft, setEditsDraft] = useState<Record<string, string>>({});
   const [editsBusyId, setEditsBusyId] = useState<string | null>(null);
 
@@ -94,9 +97,6 @@ function ChangesScreen() {
   const [explainText, setExplainText] = useState<string>("");
   const [explainProvider, setExplainProvider] = useState<string>("");
   const [explainLoadingFor, setExplainLoadingFor] = useState<string | null>(null);
-
-  const [diffOpen, setDiffOpen] = useState(false);
-  const [diffPr, setDiffPr] = useState<PR | null>(null);
 
   if (isLoading || !data) {
     return (
@@ -144,9 +144,7 @@ function ChangesScreen() {
       setExplainText(res.explanation);
       setExplainProvider(res.provider);
     } catch (err) {
-      setExplainText(
-        `Couldn't load explanation: ${(err as Error).message}`,
-      );
+      setExplainText(`Couldn't load explanation: ${(err as Error).message}`);
     } finally {
       setExplainLoadingFor(null);
     }
@@ -163,9 +161,7 @@ function ChangesScreen() {
       setExplainText(res.explanation);
       setExplainProvider(res.provider);
     } catch (err) {
-      setExplainText(
-        `Couldn't load explanation: ${(err as Error).message}`,
-      );
+      setExplainText(`Couldn't load explanation: ${(err as Error).message}`);
     } finally {
       setExplainLoadingFor(null);
     }
@@ -204,11 +200,6 @@ function ChangesScreen() {
     } finally {
       setEditsBusyId(null);
     }
-  }
-
-  function openDiff(pr: PR) {
-    setDiffPr(pr);
-    setDiffOpen(true);
   }
 
   return (
@@ -283,7 +274,9 @@ function ChangesScreen() {
           <div className="rounded-3xl border border-border bg-card p-5 card-hover">
             <div className="flex items-center justify-between">
               <div className="text-sm font-medium text-muted-foreground">Version log</div>
-              <div className="text-xs text-muted-foreground">{prs.filter((p) => p.status === "approved").length} shipped · {prs.length} total</div>
+              <div className="text-xs text-muted-foreground">
+                {prs.filter((p) => p.status === "approved").length} shipped · {prs.length} total
+              </div>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
               {[...prs]
@@ -304,7 +297,9 @@ function ChangesScreen() {
                         title={p.title}
                       >
                         <span className="font-mono font-semibold">v0.{p.number}</span>
-                        <span className="ml-1.5 hidden sm:inline">{p.title.length > 22 ? p.title.slice(0, 22) + "…" : p.title}</span>
+                        <span className="ml-1.5 hidden sm:inline">
+                          {p.title.length > 22 ? p.title.slice(0, 22) + "…" : p.title}
+                        </span>
                       </div>
                       {!isLast && <span className="text-muted-foreground">›</span>}
                     </div>
@@ -326,10 +321,7 @@ function ChangesScreen() {
               const expanded = !!expandedChanges[p.id];
               const isRollbackTarget = confirmRollbackId === p.id;
               return (
-                <div
-                  key={p.id}
-                  className="rounded-3xl border border-border bg-card p-6 card-hover"
-                >
+                <div key={p.id} className="rounded-3xl border border-border bg-card p-6 card-hover">
                   <div className="flex flex-wrap items-center gap-3">
                     <span className="rounded-full bg-foreground px-2.5 py-1 text-xs font-mono text-background">
                       PR #{p.number}
@@ -360,12 +352,24 @@ function ChangesScreen() {
                       ` · Approved by ${p.approver_name} ${new Date(p.approved_at).toLocaleTimeString()}`}
                   </div>
 
+                  {p.screenshot_url && (
+                    <div className="mt-3">
+                      <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        Screenshot
+                      </div>
+                      <img
+                        src={p.screenshot_url}
+                        alt={p.title}
+                        className="aspect-video w-full rounded-xl border border-border bg-muted object-cover"
+                        loading="lazy"
+                      />
+                    </div>
+                  )}
+
                   {changes.length > 0 && (
                     <div className="mt-3">
                       <button
-                        onClick={() =>
-                          setExpandedChanges((s) => ({ ...s, [p.id]: !s[p.id] }))
-                        }
+                        onClick={() => setExpandedChanges((s) => ({ ...s, [p.id]: !s[p.id] }))}
                         className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground hover:bg-muted"
                       >
                         {expanded ? (
@@ -385,9 +389,7 @@ function ChangesScreen() {
                             >
                               <div className="flex items-center gap-2 text-xs">
                                 <FileCode2 className="size-3 text-muted-foreground" />
-                                <span className="font-mono text-foreground">
-                                  {c.file_path}
-                                </span>
+                                <span className="font-mono text-foreground">{c.file_path}</span>
                               </div>
                               <p className="mt-1.5 text-sm text-foreground/90">
                                 {c.plain_english_summary}
@@ -401,6 +403,36 @@ function ChangesScreen() {
                             </li>
                           ))}
                         </ul>
+                      )}
+                    </div>
+                  )}
+
+                  {changes.length > 0 && (
+                    <div className="mt-2">
+                      <button
+                        onClick={() => setExpandedDiffs((s) => ({ ...s, [p.id]: !s[p.id] }))}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground hover:border-brand hover:text-foreground transition-colors"
+                        aria-expanded={!!expandedDiffs[p.id]}
+                      >
+                        <ChevronRight
+                          className={`size-3 transition-transform ${expandedDiffs[p.id] ? "rotate-90" : ""}`}
+                        />
+                        Advanced (technical diff)
+                      </button>
+                      {expandedDiffs[p.id] && (
+                        <div className="mt-3 space-y-3">
+                          {changes.map((c) => (
+                            <div key={`diff-${c.id}`} className="space-y-1.5">
+                              <div className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-[11px] font-mono text-muted-foreground">
+                                <FileCode2 className="size-3" />
+                                <span className="text-foreground">{c.file_path}</span>
+                              </div>
+                              <pre className="text-xs font-mono whitespace-pre-wrap break-words rounded-lg border border-border bg-background p-3 overflow-auto max-h-80">
+                                {c.technical_diff || "(no diff captured)"}
+                              </pre>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
                   )}
@@ -428,18 +460,6 @@ function ChangesScreen() {
                           <Undo2 className="size-3" /> Rollback
                         </button>
                         <button
-                          onClick={() => openDiff(p)}
-                          disabled={changes.length === 0}
-                          className="rounded-full border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-                          title={
-                            changes.length === 0
-                              ? "No file diffs available"
-                              : "View per-file diff"
-                          }
-                        >
-                          View diff
-                        </button>
-                        <button
                           onClick={() => openExplainForPr(p)}
                           disabled={explainLoadingFor === p.id}
                           className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors disabled:opacity-40"
@@ -462,8 +482,8 @@ function ChangesScreen() {
                                 Roll back PR #{p.number}?
                               </div>
                               <p className="mt-1 text-xs text-muted-foreground">
-                                The Recovery Agent will revert this change and log
-                                a recovery event. This cannot be undone from the UI.
+                                The Recovery Agent will revert this change and log a recovery event.
+                                This cannot be undone from the UI.
                               </p>
                               <div className="mt-3 flex items-center gap-2">
                                 <button
@@ -497,9 +517,7 @@ function ChangesScreen() {
                         </label>
                         <textarea
                           value={editsDraft[p.id] ?? ""}
-                          onChange={(e) =>
-                            setEditsDraft((d) => ({ ...d, [p.id]: e.target.value }))
-                          }
+                          onChange={(e) => setEditsDraft((d) => ({ ...d, [p.id]: e.target.value }))}
                           rows={2}
                           placeholder="e.g. Make the CTA button purple and add a confirmation toast."
                           className="mt-2 w-full resize-none rounded-lg border border-border bg-card p-2 text-sm focus:border-brand focus:outline-none"
@@ -507,10 +525,7 @@ function ChangesScreen() {
                         <div className="mt-2 flex justify-end">
                           <button
                             onClick={() => submitEdits(p.id)}
-                            disabled={
-                              editsBusyId === p.id ||
-                              !(editsDraft[p.id] ?? "").trim()
-                            }
+                            disabled={editsBusyId === p.id || !(editsDraft[p.id] ?? "").trim()}
                             className="inline-flex items-center gap-1.5 rounded-full bg-brand px-3 py-1.5 text-xs font-semibold text-brand-foreground hover:brightness-105 disabled:opacity-40"
                           >
                             {editsBusyId === p.id ? (
@@ -527,8 +542,8 @@ function ChangesScreen() {
 
                   {p.status === "blocked" && (
                     <div className="mt-3 rounded-xl border border-coral bg-coral/10 p-3 text-xs text-coral">
-                      <AlertTriangle className="mr-1 inline size-3" /> Blocked by
-                      Safety Agent — secret detected
+                      <AlertTriangle className="mr-1 inline size-3" /> Blocked by Safety Agent —
+                      secret detected
                     </div>
                   )}
                 </div>
@@ -544,14 +559,11 @@ function ChangesScreen() {
             <Sparkles className="size-4 text-violet" />
             <h3 className="text-lg font-semibold">AI explanation</h3>
           </div>
-          {explainTitle && (
-            <p className="mt-1 text-xs text-muted-foreground">{explainTitle}</p>
-          )}
+          {explainTitle && <p className="mt-1 text-xs text-muted-foreground">{explainTitle}</p>}
           <div className="mt-4 max-h-[50vh] overflow-y-auto rounded-2xl border border-border bg-background p-4 text-sm leading-relaxed text-foreground/90">
             {explainLoadingFor ? (
               <div className="flex items-center gap-2 text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" /> Thinking through this
-                change…
+                <Loader2 className="size-4 animate-spin" /> Thinking through this change…
               </div>
             ) : (
               <div className="whitespace-pre-wrap">{explainText}</div>
@@ -570,58 +582,11 @@ function ChangesScreen() {
           </div>
         </Modal>
       )}
-
-      {diffOpen && diffPr && (
-        <Modal onClose={() => setDiffOpen(false)}>
-          <div className="flex items-center gap-2">
-            <FileCode2 className="size-4 text-muted-foreground" />
-            <h3 className="text-lg font-semibold">
-              Diff · PR #{diffPr.number}
-            </h3>
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">{diffPr.title}</p>
-          <div className="mt-4 max-h-[60vh] space-y-3 overflow-y-auto">
-            {(diffPr.changes ?? []).map((c) => (
-              <div
-                key={c.id}
-                className="rounded-2xl border border-border bg-background"
-              >
-                <div className="flex items-center gap-2 border-b border-border px-3 py-2 text-xs">
-                  <FileCode2 className="size-3 text-muted-foreground" />
-                  <span className="font-mono">{c.file_path}</span>
-                </div>
-                <pre className="overflow-x-auto px-3 py-2 text-[11px] leading-relaxed font-mono text-foreground/90">
-                  {c.technical_diff || "(no diff captured)"}
-                </pre>
-              </div>
-            ))}
-            {(diffPr.changes ?? []).length === 0 && (
-              <div className="rounded-2xl border border-dashed border-border bg-background p-6 text-center text-sm text-muted-foreground">
-                No per-file diffs were captured for this PR.
-              </div>
-            )}
-          </div>
-          <div className="mt-3 flex justify-end">
-            <button
-              onClick={() => setDiffOpen(false)}
-              className="rounded-full border border-border px-4 py-1.5 text-xs hover:bg-muted"
-            >
-              Close
-            </button>
-          </div>
-        </Modal>
-      )}
     </div>
   );
 }
 
-function Modal({
-  children,
-  onClose,
-}: {
-  children: React.ReactNode;
-  onClose: () => void;
-}) {
+function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 px-4"

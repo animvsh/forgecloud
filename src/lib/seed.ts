@@ -155,6 +155,18 @@ function seedConnectorsAndSuggestions() {
       ["google_sheets"],
       ["Slow-day detection", "Promo composer", "Profit estimate", "Owner approval"],
     ],
+    // The PRD's canonical demo template — "Build a simple CRM for my sales team."
+    // (forgecloud.pdf section 14 — Demo script.) Keeping it here means the CRM
+    // demo flow from the spec is one click away from the Suggested Apps screen.
+    [
+      "app-simple-crm",
+      "simple-crm",
+      "Simple CRM",
+      "Lead dashboard, add lead form, notes, follow-up date, login. The PRD's reference demo.",
+      "📇",
+      ["gmail", "google_sheets"],
+      ["Lead dashboard", "Add lead form", "Lead status", "Notes + follow-up", "Search", "Login"],
+    ],
   ];
   const insertApp = db.prepare(
     `INSERT OR IGNORE INTO suggested_apps (id, workspace_id, project_id, slug, title, description, icon, uses_connections, sample_features) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -305,6 +317,21 @@ function seedDemoProject() {
       filesChanged,
       createdAt,
     );
+  }
+
+  // Screenshot URLs per PR (PRD §10 requires every PR to include a screenshot).
+  const prScreenshots: Array<[string, string]> = [
+    ["pr-1", "https://images.unsplash.com/photo-1556745757-8d76bdb6984b?w=900&q=70"],
+    ["pr-2", "https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=900&q=70"],
+    ["pr-3", "https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=900&q=70"],
+    ["pr-4", "https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=900&q=70"],
+    ["pr-5", "https://images.unsplash.com/photo-1518770660439-4636190af475?w=900&q=70"],
+  ];
+  const updatePrScreenshot = db.prepare(
+    `UPDATE pull_requests SET screenshot_url = ? WHERE id = ?`,
+  );
+  for (const [prId, url] of prScreenshots) {
+    updatePrScreenshot.run(url, prId);
   }
 
   // Per-file change rows for the 5 PRs.

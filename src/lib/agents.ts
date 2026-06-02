@@ -392,6 +392,56 @@ export function detectSecret(text: string): string | null {
   return null;
 }
 
+// Section 12 of forgecloud.pdf — guardrails the platform must block.
+// Each rule has a kind, a friendly title, and a pattern. detectDangerousAction()
+// returns null when input is safe, otherwise a structured hit.
+export type DangerousActionHit = {
+  kind:
+    | "shell_command"
+    | "drop_table"
+    | "delete_database"
+    | "billing_change"
+    | "external_email"
+    | "expose_private_data"
+    | "merge_broken_build"
+    | "permission_change";
+  title: string;
+  match: string;
+};
+
+const DANGER_RULES: Array<{ kind: DangerousActionHit["kind"]; title: string; pattern: RegExp }> = [
+  // Shell / filesystem destruction
+  { kind: "shell_command", title: "Dangerous shell command (rm -rf / dd / shutdown)", pattern: /\b(rm\s+-rf\s+\/|sudo\s+rm\s+-rf|dd\s+if=|mkfs\.|shutdown\s+(?:-h|now)|:\(\)\s*\{\s*:\|:&\s*\};:)/i },
+  // SQL DDL destruction
+  { kind: "drop_table", title: "Dropping a database table", pattern: /\bDROP\s+TABLE\b/i },
+  { kind: "delete_database", title: "Deleting an entire database", pattern: /\b(DROP\s+DATABASE|TRUNCATE\s+\w+|DELETE\s+FROM\s+\w+\s*(?:;|$))/i },
+  // Money / pricing changes
+  { kind: "billing_change", title: "Editing billing / payment logic without approval", pattern: /\b(billing_amount|charge_customer|stripe\.charges\.create|refund|payment_method|invoice_total|price_cents)\b/i },
+  // External communication
+  { kind: "external_email", title: "Sending external email without approval", pattern: /\b(send(?:_|\s+)mail|sendgrid\.send|resend\.emails\.send|mailgun|aws\.ses\.sendemail|smtp\.send)\b/i },
+  // Customer-data exposure
+  { kind: "expose_private_data", title: "Exposing private user data (PII unmasked in UI)", pattern: /\b(unmask\w*|show(?:_|\s+)?(?:full(?:_|\s+))?(?:phone|email|ssn|credit_card|address)|return\s+\*\s+from\s+users)\b/i },
+  // Build/test bypass
+  { kind: "merge_broken_build", title: "Bypassing failing build or tests", pattern: /\b(--no-verify|skip(?:_|\s+)tests?|ignore[-_]?failures?|FORCE_MERGE|allow[-_]failure)\b/i },
+  // Permission changes
+  { kind: "permission_change", title: "Changing permissions (role escalation)", pattern: /\b(grant\s+all|role\s*=\s*['"]?(admin|owner|root)|chmod\s+[ugoa]?\+?s|setuid)\b/i },
+];
+
+export function detectDangerousAction(text: string): DangerousActionHit | null {
+  for (const rule of DANGER_RULES) {
+    const m = text.match(rule.pattern);
+    if (m) return { kind: rule.kind, title: rule.title, match: m[0] };
+  }
+  return null;
+}
+
+/** Convenience: combined guardrail check used by /api/chat. */
+export function detectGuardrailViolation(text: string): { kind: string; title: string; match: string } | null {
+  const secret = detectSecret(text);
+  if (secret) return { kind: "secret", title: "Hardcoded credential", match: secret };
+  return detectDangerousAction(text);
+}
+
 export function listRecoveryEvents(projectId: string): RecoveryEvent[] {
   const db = getDb();
   return db
