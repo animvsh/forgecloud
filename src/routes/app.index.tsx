@@ -86,14 +86,14 @@ function ProjectHome() {
     } finally { setBusy(null); }
   }
 
-  async function triggerFailure(type: Parameters<typeof inject.mutate>[0]) {
+  async function triggerFailure(type: string) {
     setBusy(`fail-${type}`);
-    try { await inject.mutateAsync(type); } finally { setBusy(null); }
+    try { await inject.mutateAsync({ type }); } finally { setBusy(null); }
   }
 
   async function deployProd(fail = false) {
     setBusy(fail ? "deploy-fail" : "deploy");
-    try { await deploy.mutateAsync(fail); } finally { setBusy(null); }
+    try { await deploy.mutateAsync({ fail }); } finally { setBusy(null); }
   }
 
   async function doReset() {

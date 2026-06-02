@@ -2,16 +2,19 @@
  * Plain HTTP API handler for ForgeCloud.
  *
  * Replaces the broken `createServerFn` system (Seroval serialization bug in
- * @tanstack/react-start 1.167.50). This module exposes the same business
- * logic as plain HTTP JSON endpoints so the client can call them via fetch().
+ * @tanstack/react-start 1.167.50). Each endpoint is a plain JSON HTTP route.
  *
- * It is bundled by the `build:api` script to `dist/server/api-handler.mjs` and
- * loaded by `server-entry.mjs` for any URL that starts with `/api/`.
+ * Bundled by `npm run build:api` to `dist/server/api-handler.mjs` and loaded by
+ * `server-entry.mjs` for any URL that starts with `/api/`.
+ *
+ * Middleware applied in order: request ID + log → rate limit → Zod validation
+ * → handler → log completion.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { z } from "zod";
 
 import { ensureSeed, ids } from "../lib/seed";
-import { getDb, type Project, type Task, type User, type Workspace } from "../lib/db";
+import { getDb, type Change, type Project, type Task, type User, type Workspace } from "../lib/db";
 import {
   approvePr,
   createAgentsForProject,
@@ -29,12 +32,23 @@ import {
   runAgentOnTask,
   triggerFailure,
 } from "../lib/agents";
-import { generateBuildPlan, isAiAvailable } from "../lib/ai";
+import {
+  activeProviderName,
+  commentToTask,
+  explainRiskyChange,
+  generateBuildPlan,
+  isAiAvailable,
+} from "../lib/ai";
 import type { BuildPlan } from "../lib/ai";
+import { log, newRequestId } from "../lib/logger";
+import { clientKey, consume, RATE_CONFIGS, type RateLimitConfig } from "../lib/rate-limit";
+
+const SERVER_STARTED_AT = Date.now();
+const APP_VERSION = process.env.APP_VERSION ?? "0.1.0";
 
 // ---------- shared helpers ---------------------------------------------------
 
-async function readJsonBody(req: IncomingMessage): Promise<any> {
+async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(chunk as Buffer);
   if (chunks.length === 0) return {};
@@ -47,18 +61,20 @@ async function readJsonBody(req: IncomingMessage): Promise<any> {
   }
 }
 
-function sendJson(res: ServerResponse, status: number, body: unknown): void {
+function sendJson(res: ServerResponse, status: number, body: unknown, requestId?: string): void {
   const json = JSON.stringify(body);
-  res.writeHead(status, {
+  const headers: Record<string, string> = {
     "content-type": "application/json; charset=utf-8",
-    "content-length": Buffer.byteLength(json),
+    "content-length": String(Buffer.byteLength(json)),
     "cache-control": "no-store",
-  });
+  };
+  if (requestId) headers["x-request-id"] = requestId;
+  res.writeHead(status, headers);
   res.end(json);
 }
 
-function sendError(res: ServerResponse, status: number, message: string): void {
-  sendJson(res, status, { error: message });
+function sendError(res: ServerResponse, status: number, message: string, requestId?: string, extra?: Record<string, unknown>): void {
+  sendJson(res, status, { error: message, ...(extra ?? {}) }, requestId);
 }
 
 async function getCurrentProjectId(): Promise<string> {
@@ -80,9 +96,83 @@ async function getCurrentProjectId(): Promise<string> {
   return id;
 }
 
+// Compute risk-check matrix for a PR from recovery_events + approvals.
+type RiskCheckResult = "pass" | "fail" | "pending" | "n/a";
+function computeRiskChecks(prId: string): {
+  build: RiskCheckResult;
+  qa: RiskCheckResult;
+  secretScan: RiskCheckResult;
+  migration: RiskCheckResult;
+} {
+  const d = getDb();
+  const pr = d.prepare("SELECT * FROM pull_requests WHERE id = ?").get(prId) as
+    | { project_id: string; task_id: string | null; risk_level: string; requires_approval: number; status: string }
+    | undefined;
+  if (!pr) return { build: "n/a", qa: "n/a", secretScan: "n/a", migration: "n/a" };
+
+  const isBlocked = pr.status === "blocked";
+  const isRolledBack = pr.status === "rolled_back";
+
+  const pendingApproval = d
+    .prepare("SELECT * FROM approvals WHERE pr_id = ? AND status = 'pending'")
+    .get(prId) as { id: string } | undefined;
+  const approvedThisPr = pr.status === "approved";
+
+  const task = pr.task_id
+    ? (d
+        .prepare("SELECT title, description FROM tasks WHERE id = ?")
+        .get(pr.task_id) as { title?: string; description?: string } | undefined)
+    : undefined;
+  const taskText = `${task?.title ?? ""} ${task?.description ?? ""}`;
+  // Strict DB-impact detection: needs a clear signal, not just the word "table".
+  const touchesDb = /database|schema migration|db migration|add(?:ing)? \w+ column|drop \w+ table|alter table|migration|rls policy/i.test(
+    taskText,
+  );
+  const isHighRisk = pr.risk_level === "high" || touchesDb;
+
+  return {
+    build: isBlocked || isRolledBack ? "fail" : "pass",
+    qa: isBlocked ? "fail" : "pass",
+    // Per-PR scan: only the actually-blocked PR fails the scan.
+    secretScan: isBlocked ? "fail" : "pass",
+    migration: isHighRisk
+      ? approvedThisPr
+        ? "pass"
+        : pendingApproval
+          ? "pending"
+          : "pending"
+      : "n/a",
+  };
+}
+
 // ---------- route handlers ---------------------------------------------------
 
-async function handleGetState(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleGetHealth(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+  const d = getDb();
+  let dbOk = false;
+  try {
+    d.prepare("SELECT 1").get();
+    dbOk = true;
+  } catch {
+    dbOk = false;
+  }
+  sendJson(
+    res,
+    dbOk ? 200 : 503,
+    {
+      ok: dbOk,
+      db: dbOk ? "up" : "down",
+      provider: activeProviderName(),
+      aiAvailable: isAiAvailable(),
+      uptimeSeconds: Math.floor((Date.now() - SERVER_STARTED_AT) / 1000),
+      version: APP_VERSION,
+      time: new Date().toISOString(),
+    },
+    requestId,
+  );
+}
+
+async function handleGetState(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
   ensureSeed();
   const projectId = await getCurrentProjectId();
   const d = getDb();
@@ -105,64 +195,88 @@ async function handleGetState(_req: IncomingMessage, res: ServerResponse): Promi
   const workspace = d
     .prepare("SELECT * FROM workspaces WHERE id = ?")
     .get(ids.workspace) as Workspace;
-  sendJson(res, 200, {
-    user,
-    workspace,
-    project,
-    agents: agentsList,
-    tasks,
-    prs,
-    recovery,
-    deployments,
-    approvals,
-    teamMembers,
-    chatMessages,
-    aiAvailable: isAiAvailable(),
+
+  // Per-PR changes + risk checks (enriches PRs for the Changes screen).
+  const prsEnriched = prs.map((p) => {
+    const changes = d
+      .prepare("SELECT * FROM changes WHERE pr_id = ? ORDER BY id ASC")
+      .all(p.id) as Change[];
+    return { ...p, changes, riskChecks: computeRiskChecks(p.id) };
   });
+
+  const previewComments = d
+    .prepare("SELECT * FROM preview_comments WHERE project_id = ? ORDER BY created_at DESC")
+    .all(projectId);
+
+  sendJson(
+    res,
+    200,
+    {
+      user,
+      workspace,
+      project,
+      agents: agentsList,
+      tasks,
+      prs: prsEnriched,
+      recovery,
+      deployments,
+      approvals,
+      teamMembers,
+      chatMessages,
+      previewComments,
+      aiAvailable: isAiAvailable(),
+      providerName: activeProviderName(),
+      serverVersion: APP_VERSION,
+    },
+    requestId,
+  );
 }
 
-async function handleIntake(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const data = await readJsonBody(req);
-  const projectName = String(data.projectName ?? "").trim();
-  const userType = String(data.userType ?? "").trim();
-  const firstVersion = String(data.firstVersion ?? "").trim();
-  const style = String(data.style ?? "").trim();
-  if (!projectName || !userType || !firstVersion || !style) {
-    return sendError(res, 400, "projectName, userType, firstVersion, style are required");
-  }
-  const needsLogin = Boolean(data.needsLogin);
-  const reviewers: string[] = Array.isArray(data.reviewers) ? data.reviewers : [];
-  const rawPrompt: string | undefined =
-    typeof data.rawPrompt === "string" ? data.rawPrompt : undefined;
+const IntakeSchema = z.object({
+  projectName: z.string().min(1).max(120),
+  userType: z.string().min(1).max(200),
+  firstVersion: z.string().min(1).max(500),
+  style: z.string().min(1).max(200),
+  needsLogin: z.boolean().optional(),
+  reviewers: z.array(z.string().min(1).max(60)).max(20).optional(),
+  rawPrompt: z.string().max(2000).optional(),
+});
+
+async function handleIntake(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+  const parsed = IntakeSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid intake payload", requestId, { issues: parsed.error.issues });
+  const data = parsed.data;
 
   ensureSeed();
   const projectId = await getCurrentProjectId();
   const project = getProject(projectId)!;
   const d = getDb();
   d.prepare(`UPDATE projects SET name = ?, description = ?, status = 'planning' WHERE id = ?`).run(
-    projectName || project.name,
-    `${userType} • ${firstVersion} • ${style}`,
+    data.projectName || project.name,
+    `${data.userType} • ${data.firstVersion} • ${data.style}`,
     projectId,
   );
   createAgentsForProject(projectId);
-  const prompt = rawPrompt ?? `Build a ${firstVersion} for ${userType}. Style: ${style}.`;
+  const prompt = data.rawPrompt ?? `Build a ${data.firstVersion} for ${data.userType}. Style: ${data.style}.`;
   const plan: BuildPlan = await generateBuildPlan(prompt);
-  const tasks = createTasksFromPlan(projectId, plan, reviewers[0] ?? "Animesh");
+  const tasks = createTasksFromPlan(projectId, plan, data.reviewers?.[0] ?? "Animesh");
   d.prepare(
     `INSERT INTO chat_messages (id, project_id, role, content, metadata) VALUES (?, ?, 'assistant', ?, ?)`,
   ).run(
     ids.newMessage(),
     projectId,
-    `I created a plan for ${projectName}. ${plan.summary} ${tasks.length} tasks, all assigned.`,
+    `I created a plan for ${data.projectName}. ${plan.summary} ${tasks.length} tasks, all assigned.`,
     JSON.stringify({ kind: "plan", plan, taskIds: tasks.map((t) => t.id) }),
   );
-  sendJson(res, 200, { project: getProject(projectId), plan, tasks });
+  sendJson(res, 200, { project: getProject(projectId), plan, tasks }, requestId);
 }
 
-async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const data = await readJsonBody(req);
-  const message = String(data.message ?? "").trim();
-  if (!message) return sendError(res, 400, "message is required");
+const ChatSchema = z.object({ message: z.string().min(1).max(4000) });
+
+async function handleChat(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+  const parsed = ChatSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid chat payload", requestId, { issues: parsed.error.issues });
+  const { message } = parsed.data;
 
   const d = getDb();
   const projectId = await getCurrentProjectId();
@@ -178,7 +292,7 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
     d.prepare(
       `INSERT INTO chat_messages (id, project_id, role, content, metadata) VALUES (?, ?, 'assistant', ?, ?)`,
     ).run(ids.newMessage(), projectId, reply, JSON.stringify({ kind: "secret_block" }));
-    return sendJson(res, 200, { reply, blocked: true });
+    return sendJson(res, 200, { reply, blocked: true }, requestId);
   }
 
   const project = getProject(projectId)!;
@@ -199,7 +313,7 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
       reply,
       JSON.stringify({ kind: "plan", plan, taskIds: tasks.map((t) => t.id) }),
     );
-    return sendJson(res, 200, { reply, plan, tasks });
+    return sendJson(res, 200, { reply, plan, tasks }, requestId);
   }
 
   const newTasks = createTasksFromPlan(
@@ -226,22 +340,30 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
     reply,
     JSON.stringify({ kind: "task_created", taskIds: newTasks.map((t) => t.id) }),
   );
-  sendJson(res, 200, { reply, tasks: newTasks });
+  sendJson(res, 200, { reply, tasks: newTasks }, requestId);
 }
 
-async function handleRunTask(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const data = await readJsonBody(req);
-  const taskId = String(data.taskId ?? "").trim();
-  if (!taskId) return sendError(res, 400, "taskId is required");
-  const failureType = data.failureType ? String(data.failureType) : undefined;
-  const result = await runAgentOnTask(taskId, failureType);
-  sendJson(res, 200, result);
+const RunTaskSchema = z.object({
+  taskId: z.string().min(1),
+  failureType: z.string().min(1).optional(),
+});
+
+async function handleRunTask(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+  const parsed = RunTaskSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid run-task payload", requestId, { issues: parsed.error.issues });
+  const result = await runAgentOnTask(parsed.data.taskId, parsed.data.failureType);
+  sendJson(res, 200, result, requestId);
 }
 
-async function handleRunAll(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const data = await readJsonBody(req);
-  const failureAt = typeof data.failureAt === "number" ? data.failureAt : undefined;
-  const failureType = data.failureType ? String(data.failureType) : undefined;
+const RunAllSchema = z.object({
+  failureAt: z.number().int().nonnegative().optional(),
+  failureType: z.string().min(1).optional(),
+});
+
+async function handleRunAll(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+  const parsed = RunAllSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid run-all payload", requestId, { issues: parsed.error.issues });
+  const { failureAt, failureType } = parsed.data;
   const projectId = await getCurrentProjectId();
   const d = getDb();
   const backlog = d
@@ -255,10 +377,10 @@ async function handleRunAll(req: IncomingMessage, res: ServerResponse): Promise<
     const failure = failureAt === i ? failureType ?? "build_failed" : undefined;
     results.push(await runAgentOnTask(t.id, failure));
   }
-  sendJson(res, 200, { results });
+  sendJson(res, 200, { results }, requestId);
 }
 
-async function handleRunFullDemo(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleRunFullDemo(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
   const projectId = await getCurrentProjectId();
   const d = getDb();
   const backlog = d
@@ -279,25 +401,40 @@ async function handleRunFullDemo(_req: IncomingMessage, res: ServerResponse): Pr
     "Safety Agent blocked the PR before merge",
   );
   recordDeployment(projectId, null, "preview", "live", `https://preview-demo.forgecloud.dev`);
-  sendJson(res, 200, { ok: true });
+  sendJson(res, 200, { ok: true }, requestId);
 }
 
-async function handleSkipToDemo(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleSkipToDemo(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
   ensureSeed();
-  sendJson(res, 200, { ok: true });
+  sendJson(res, 200, { ok: true }, requestId);
 }
 
-async function handleInjectFailure(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const data = await readJsonBody(req);
-  const type = String(data.type ?? "").trim();
-  const message = data.message ? String(data.message) : undefined;
+const InjectFailureSchema = z.object({
+  type: z.enum([
+    "model_timeout",
+    "build_failed",
+    "secret_detected",
+    "unsafe_db_migration",
+    "deploy_failed",
+    "bad_output",
+    "rate_limit",
+    "agent_conflict",
+  ]),
+  message: z.string().max(400).optional(),
+});
+
+async function handleInjectFailure(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+  const parsed = InjectFailureSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid inject-failure payload", requestId, { issues: parsed.error.issues });
+  const { type, message } = parsed.data;
+
   const projectId = await getCurrentProjectId();
   const d = getDb();
 
   const defaults: Record<string, { msg: string; recovery: string }> = {
     model_timeout: {
       msg: "Primary model timed out on Frontend Agent",
-      recovery: "Switched to fallback model (claude-haiku-4-5) and continued from saved state",
+      recovery: "Switched to fallback model and continued from saved state",
     },
     build_failed: {
       msg: "Build failed on the latest PR — TypeScript error in Form.tsx",
@@ -305,7 +442,7 @@ async function handleInjectFailure(req: IncomingMessage, res: ServerResponse): P
         "QA Agent isolated the bad file, Frontend Agent shipped a fix, build re-ran successfully",
     },
     secret_detected: {
-      msg: "Hardcoded API key found in src/lib/api.ts",
+      msg: "Hardcoded API key found in src/lib/email.ts",
       recovery: "Safety Agent blocked the PR before merge — secrets never reach production",
     },
     unsafe_db_migration: {
@@ -321,7 +458,7 @@ async function handleInjectFailure(req: IncomingMessage, res: ServerResponse): P
       recovery: "Regenerated only the failed step — no need to rebuild from scratch",
     },
     rate_limit: {
-      msg: "Anthropic API rate limit hit during agent run",
+      msg: "LLM provider rate limit hit during agent run",
       recovery: "Exponential backoff retry, succeeded on attempt 3",
     },
     agent_conflict: {
@@ -330,11 +467,11 @@ async function handleInjectFailure(req: IncomingMessage, res: ServerResponse): P
     },
   };
   const d2 = defaults[type];
-  if (!d2) return sendError(res, 400, `unknown failure type: ${type}`);
+  if (!d2) return sendError(res, 400, `unknown failure type: ${type}`, requestId);
 
   if (type === "secret_detected") {
     recordSecretBlock(projectId, null, "sk-live-EXAMPLE-DETECTED");
-    return sendJson(res, 200, { event: listRecoveryEvents(projectId)[0] });
+    return sendJson(res, 200, { event: listRecoveryEvents(projectId)[0] }, requestId);
   }
   if (type === "unsafe_db_migration") {
     const event = await triggerFailure(projectId, null, type, d2.msg, d2.recovery);
@@ -348,46 +485,155 @@ async function handleInjectFailure(req: IncomingMessage, res: ServerResponse): P
       "Backend Agent wants to drop the users table. This would delete all existing users. Approve?",
       Date.now(),
     );
-    return sendJson(res, 200, { event });
+    return sendJson(res, 200, { event }, requestId);
   }
   const event = await triggerFailure(projectId, null, type, message ?? d2.msg, d2.recovery);
-  sendJson(res, 200, { event });
+  sendJson(res, 200, { event }, requestId);
 }
 
-async function handleApproval(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const data = await readJsonBody(req);
-  const approvalId = String(data.approvalId ?? "").trim();
-  const decision = data.decision === "approve" || data.decision === "reject" ? data.decision : null;
-  if (!approvalId || !decision) return sendError(res, 400, "approvalId and decision required");
-  const approverName = data.approverName ? String(data.approverName) : "Animesh";
-  const result = decideApproval(approvalId, decision, approverName);
-  sendJson(res, 200, result);
+const ApprovalSchema = z.object({
+  approvalId: z.string().min(1),
+  decision: z.enum(["approve", "reject"]),
+  approverName: z.string().min(1).max(60).optional(),
+});
+
+async function handleApproval(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+  const parsed = ApprovalSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid approval payload", requestId, { issues: parsed.error.issues });
+  const result = decideApproval(parsed.data.approvalId, parsed.data.decision, parsed.data.approverName ?? "Animesh");
+  sendJson(res, 200, result, requestId);
 }
 
-async function handleApprovePr(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const data = await readJsonBody(req);
-  const prId = String(data.prId ?? "").trim();
-  if (!prId) return sendError(res, 400, "prId is required");
-  const approverName = data.approverName ? String(data.approverName) : "Animesh";
-  approvePr(prId, approverName);
-  sendJson(res, 200, { ok: true });
+const ApprovePrSchema = z.object({
+  prId: z.string().min(1),
+  approverName: z.string().min(1).max(60).optional(),
+});
+
+async function handleApprovePr(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+  const parsed = ApprovePrSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid approve-pr payload", requestId, { issues: parsed.error.issues });
+  approvePr(parsed.data.prId, parsed.data.approverName ?? "Animesh");
+  sendJson(res, 200, { ok: true }, requestId);
 }
 
-async function handleDeploy(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const data = await readJsonBody(req);
-  const prId = data.prId ? String(data.prId) : null;
-  const environment = (data.environment ?? "preview") as "preview" | "staging" | "production";
+const RollbackPrSchema = z.object({ prId: z.string().min(1) });
+
+async function handleRollbackPr(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+  const parsed = RollbackPrSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid rollback payload", requestId, { issues: parsed.error.issues });
+  const d = getDb();
+  const pr = d.prepare("SELECT * FROM pull_requests WHERE id = ?").get(parsed.data.prId) as
+    | { id: string; project_id: string; task_id: string | null; title: string; number: number }
+    | undefined;
+  if (!pr) return sendError(res, 404, "PR not found", requestId);
+
+  d.prepare(`UPDATE pull_requests SET status = 'rolled_back' WHERE id = ?`).run(pr.id);
+  if (pr.task_id) {
+    d.prepare(`UPDATE tasks SET status = 'backlog' WHERE id = ?`).run(pr.task_id);
+  }
+  await triggerFailure(
+    pr.project_id,
+    null,
+    "manual_rollback",
+    `PR #${pr.number} (${pr.title}) was rolled back by Animesh`,
+    "Previous version restored. Task moved back to backlog for re-work.",
+  );
+  sendJson(res, 200, { ok: true, prId: pr.id }, requestId);
+}
+
+const RequestEditsSchema = z.object({
+  prId: z.string().min(1),
+  message: z.string().min(1).max(1000),
+});
+
+async function handleRequestEdits(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+  const parsed = RequestEditsSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid request-edits payload", requestId, { issues: parsed.error.issues });
+  const d = getDb();
+  const pr = d.prepare("SELECT * FROM pull_requests WHERE id = ?").get(parsed.data.prId) as
+    | { id: string; project_id: string; task_id: string | null; title: string; number: number }
+    | undefined;
+  if (!pr) return sendError(res, 404, "PR not found", requestId);
+
+  d.prepare(`UPDATE pull_requests SET status = 'changes_requested' WHERE id = ?`).run(pr.id);
+  const tasks = createTasksFromPlan(
+    pr.project_id,
+    {
+      features: [
+        {
+          title: `Edits requested on PR #${pr.number}`,
+          description: parsed.data.message,
+          ownerAgent: "Frontend Agent",
+          riskLevel: "low",
+          estimatedFiles: 2,
+        },
+      ],
+    },
+    "Animesh",
+  );
+  sendJson(res, 200, { ok: true, task: tasks[0] }, requestId);
+}
+
+const ExplainSchema = z
+  .object({
+    approvalId: z.string().min(1).optional(),
+    prId: z.string().min(1).optional(),
+  })
+  .refine((v) => v.approvalId || v.prId, { message: "approvalId or prId required" });
+
+async function handleExplain(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+  const parsed = ExplainSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid explain payload", requestId, { issues: parsed.error.issues });
+
+  const d = getDb();
+  let reason = "";
+  let details = "";
+  let riskLevel = "med";
+
+  if (parsed.data.approvalId) {
+    const a = d.prepare("SELECT * FROM approvals WHERE id = ?").get(parsed.data.approvalId) as
+      | { reason: string; details: string; risk_level: string }
+      | undefined;
+    if (!a) return sendError(res, 404, "Approval not found", requestId);
+    reason = a.reason;
+    details = a.details;
+    riskLevel = a.risk_level;
+  } else if (parsed.data.prId) {
+    const p = d.prepare("SELECT * FROM pull_requests WHERE id = ?").get(parsed.data.prId) as
+      | { title: string; summary: string; risk_level: string }
+      | undefined;
+    if (!p) return sendError(res, 404, "PR not found", requestId);
+    reason = p.title;
+    details = p.summary;
+    riskLevel = p.risk_level;
+  }
+
+  const explanation = await explainRiskyChange(reason, details, riskLevel);
+  sendJson(res, 200, { explanation, provider: activeProviderName() }, requestId);
+}
+
+const DeploySchema = z.object({
+  prId: z.string().min(1).optional().nullable(),
+  environment: z.enum(["preview", "staging", "production"]).optional(),
+});
+
+async function handleDeploy(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+  const parsed = DeploySchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid deploy payload", requestId, { issues: parsed.error.issues });
+  const environment = parsed.data.environment ?? "preview";
   const projectId = await getCurrentProjectId();
   const url = `https://preview-${Math.random().toString(36).slice(2, 8)}.forgecloud.dev`;
-  const id = recordDeployment(projectId, prId, environment, "live", url);
-  sendJson(res, 200, { deploymentId: id, url });
+  const id = recordDeployment(projectId, parsed.data.prId ?? null, environment, "live", url);
+  sendJson(res, 200, { deploymentId: id, url }, requestId);
 }
 
-async function handleDeployProduction(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const data = await readJsonBody(req);
-  const fail = Boolean(data.fail);
+const DeployProdSchema = z.object({ fail: z.boolean().optional() });
+
+async function handleDeployProduction(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+  const parsed = DeployProdSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid deploy-production payload", requestId, { issues: parsed.error.issues });
   const projectId = await getCurrentProjectId();
-  if (fail) {
+  if (parsed.data.fail) {
     const id = recordDeployment(
       projectId,
       null,
@@ -396,27 +642,19 @@ async function handleDeployProduction(req: IncomingMessage, res: ServerResponse)
       undefined,
       "Railway deploy timed out after 90s",
     );
-    return sendJson(res, 200, {
-      deploymentId: id,
-      status: "failed",
-      message: "Deploy failed but previous version is still live.",
-    });
+    return sendJson(
+      res,
+      200,
+      { deploymentId: id, status: "failed", message: "Deploy failed but previous version is still live." },
+      requestId,
+    );
   }
-  const id = recordDeployment(
-    projectId,
-    null,
-    "production",
-    "live",
-    `https://app-${Math.random().toString(36).slice(2, 6)}.railway.app`,
-  );
-  sendJson(res, 200, {
-    deploymentId: id,
-    status: "live",
-    url: `https://app-${Math.random().toString(36).slice(2, 6)}.railway.app`,
-  });
+  const url = `https://app-${Math.random().toString(36).slice(2, 6)}.railway.app`;
+  const id = recordDeployment(projectId, null, "production", "live", url);
+  sendJson(res, 200, { deploymentId: id, status: "live", url }, requestId);
 }
 
-async function handleReset(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleReset(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
   const d = getDb();
   const projectId = await getCurrentProjectId();
   const tables = [
@@ -429,126 +667,182 @@ async function handleReset(_req: IncomingMessage, res: ServerResponse): Promise<
     "pull_requests",
     "tasks",
     "agents",
+    "preview_comments",
   ];
   for (const t of tables) d.prepare(`DELETE FROM ${t} WHERE project_id = ?`).run(projectId);
   d.prepare(`UPDATE projects SET status = 'intake' WHERE id = ?`).run(projectId);
-  sendJson(res, 200, { ok: true });
+  sendJson(res, 200, { ok: true }, requestId);
 }
 
-async function handleComment(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const data = await readJsonBody(req);
-  const text = String(data.text ?? "").trim();
-  if (!text) return sendError(res, 400, "text is required");
-  const selector = data.selector ? String(data.selector) : null;
+const CommentSchema = z.object({
+  text: z.string().min(1).max(600),
+  selector: z.string().max(400).optional().nullable(),
+});
+
+async function handleComment(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+  const parsed = CommentSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid comment payload", requestId, { issues: parsed.error.issues });
+  const { text, selector } = parsed.data;
+
   const d = getDb();
   const projectId = await getCurrentProjectId();
-  const id = ids.newComment();
+  const commentId = ids.newComment();
   d.prepare(
     `INSERT INTO preview_comments (id, project_id, pr_id, selector, text, status, created_at) VALUES (?, ?, NULL, ?, ?, 'open', ?)`,
-  ).run(id, projectId, selector, text, Date.now());
+  ).run(commentId, projectId, selector ?? null, text, Date.now());
+
+  // Turn the comment into a task via LLM and persist it.
+  const taskSpec = await commentToTask(text, selector ?? null);
+  const tasks = createTasksFromPlan(
+    projectId,
+    {
+      features: [
+        {
+          title: taskSpec.title,
+          description: taskSpec.description,
+          ownerAgent: taskSpec.ownerAgent,
+          riskLevel: taskSpec.riskLevel,
+          estimatedFiles: 3,
+        },
+      ],
+    },
+    "Animesh",
+  );
+
+  // Log the conversion as an assistant chat message so the user sees it.
+  d.prepare(
+    `INSERT INTO chat_messages (id, project_id, role, content, metadata) VALUES (?, ?, 'assistant', ?, ?)`,
+  ).run(
+    ids.newMessage(),
+    projectId,
+    `Turned your preview comment into a task: "${taskSpec.title}" → ${taskSpec.ownerAgent}.`,
+    JSON.stringify({ kind: "task_created", taskIds: tasks.map((t) => t.id), source: "preview_comment", commentId }),
+  );
+
   const rows = d
     .prepare("SELECT * FROM preview_comments WHERE project_id = ? ORDER BY created_at DESC")
     .all(projectId);
-  sendJson(res, 200, rows);
+  sendJson(res, 200, { comments: rows, task: tasks[0] }, requestId);
 }
 
 // ---------- simple GET helpers ----------------------------------------------
 
-async function handleGetTasks(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleGetTasks(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
   const d = getDb();
   const projectId = await getCurrentProjectId();
   const tasks = d
     .prepare("SELECT * FROM tasks WHERE project_id = ? ORDER BY created_at ASC")
     .all(projectId);
-  sendJson(res, 200, tasks);
+  sendJson(res, 200, tasks, requestId);
 }
 
-async function handleGetPrs(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleGetPrs(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
   const projectId = await getCurrentProjectId();
-  sendJson(res, 200, listPullRequests(projectId));
+  sendJson(res, 200, listPullRequests(projectId), requestId);
 }
 
-async function handleGetAgents(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleGetAgents(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
   const projectId = await getCurrentProjectId();
-  sendJson(res, 200, getAgents(projectId));
+  sendJson(res, 200, getAgents(projectId), requestId);
 }
 
-async function handleGetFailures(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleGetFailures(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
   const projectId = await getCurrentProjectId();
-  sendJson(res, 200, listRecoveryEvents(projectId));
+  sendJson(res, 200, listRecoveryEvents(projectId), requestId);
 }
 
-async function handleGetApprovals(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleGetApprovals(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
   const projectId = await getCurrentProjectId();
-  sendJson(res, 200, getApprovalQueue(projectId));
+  sendJson(res, 200, getApprovalQueue(projectId), requestId);
 }
 
-async function handleGetTeam(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleGetTeam(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
   const d = getDb();
-  sendJson(res, 200, d.prepare("SELECT * FROM team_members WHERE workspace_id = ?").all(ids.workspace));
+  sendJson(res, 200, d.prepare("SELECT * FROM team_members WHERE workspace_id = ?").all(ids.workspace), requestId);
 }
 
-async function handleGetChat(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleGetChat(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
   const d = getDb();
   const projectId = await getCurrentProjectId();
   const rows = d
     .prepare("SELECT * FROM chat_messages WHERE project_id = ? ORDER BY created_at ASC")
     .all(projectId);
-  sendJson(res, 200, rows);
+  sendJson(res, 200, rows, requestId);
 }
 
-async function handleGetDeployments(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleGetDeployments(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
   const projectId = await getCurrentProjectId();
-  sendJson(res, 200, listDeployments(projectId));
+  sendJson(res, 200, listDeployments(projectId), requestId);
 }
 
 // ---------- router ----------------------------------------------------------
 
-type RouteHandler = (req: IncomingMessage, res: ServerResponse) => Promise<void>;
+type RouteHandler = (req: IncomingMessage, res: ServerResponse, requestId: string) => Promise<void>;
 
-const ROUTES: Array<{ method: string; pattern: RegExp; handler: RouteHandler }> = [
-  // GET
-  { method: "GET", pattern: /^\/api\/state$/, handler: handleGetState },
-  { method: "GET", pattern: /^\/api\/tasks$/, handler: handleGetTasks },
-  { method: "GET", pattern: /^\/api\/prs$/, handler: handleGetPrs },
-  { method: "GET", pattern: /^\/api\/agents$/, handler: handleGetAgents },
-  { method: "GET", pattern: /^\/api\/failures$/, handler: handleGetFailures },
-  { method: "GET", pattern: /^\/api\/approvals$/, handler: handleGetApprovals },
-  { method: "GET", pattern: /^\/api\/team$/, handler: handleGetTeam },
-  { method: "GET", pattern: /^\/api\/chat$/, handler: handleGetChat },
-  { method: "GET", pattern: /^\/api\/deployments$/, handler: handleGetDeployments },
-  // POST
-  { method: "POST", pattern: /^\/api\/intake$/, handler: handleIntake },
-  { method: "POST", pattern: /^\/api\/chat$/, handler: handleChat },
-  { method: "POST", pattern: /^\/api\/run-task$/, handler: handleRunTask },
-  { method: "POST", pattern: /^\/api\/run-all$/, handler: handleRunAll },
-  { method: "POST", pattern: /^\/api\/run-full-demo$/, handler: handleRunFullDemo },
-  { method: "POST", pattern: /^\/api\/skip-to-demo$/, handler: handleSkipToDemo },
-  { method: "POST", pattern: /^\/api\/inject-failure$/, handler: handleInjectFailure },
-  { method: "POST", pattern: /^\/api\/approval$/, handler: handleApproval },
-  { method: "POST", pattern: /^\/api\/approve-pr$/, handler: handleApprovePr },
-  { method: "POST", pattern: /^\/api\/deploy$/, handler: handleDeploy },
-  { method: "POST", pattern: /^\/api\/deploy-production$/, handler: handleDeployProduction },
-  { method: "POST", pattern: /^\/api\/reset$/, handler: handleReset },
-  { method: "POST", pattern: /^\/api\/comment$/, handler: handleComment },
+const ROUTES: Array<{ method: string; pattern: RegExp; handler: RouteHandler; rate?: RateLimitConfig }> = [
+  // GET (cheap)
+  { method: "GET", pattern: /^\/api\/health$/, handler: handleGetHealth },
+  { method: "GET", pattern: /^\/api\/state$/, handler: handleGetState, rate: RATE_CONFIGS.cheap },
+  { method: "GET", pattern: /^\/api\/tasks$/, handler: handleGetTasks, rate: RATE_CONFIGS.cheap },
+  { method: "GET", pattern: /^\/api\/prs$/, handler: handleGetPrs, rate: RATE_CONFIGS.cheap },
+  { method: "GET", pattern: /^\/api\/agents$/, handler: handleGetAgents, rate: RATE_CONFIGS.cheap },
+  { method: "GET", pattern: /^\/api\/failures$/, handler: handleGetFailures, rate: RATE_CONFIGS.cheap },
+  { method: "GET", pattern: /^\/api\/approvals$/, handler: handleGetApprovals, rate: RATE_CONFIGS.cheap },
+  { method: "GET", pattern: /^\/api\/team$/, handler: handleGetTeam, rate: RATE_CONFIGS.cheap },
+  { method: "GET", pattern: /^\/api\/chat$/, handler: handleGetChat, rate: RATE_CONFIGS.cheap },
+  { method: "GET", pattern: /^\/api\/deployments$/, handler: handleGetDeployments, rate: RATE_CONFIGS.cheap },
+  // POST (expensive — LLM calls or mutations)
+  { method: "POST", pattern: /^\/api\/intake$/, handler: handleIntake, rate: RATE_CONFIGS.expensive },
+  { method: "POST", pattern: /^\/api\/chat$/, handler: handleChat, rate: RATE_CONFIGS.expensive },
+  { method: "POST", pattern: /^\/api\/run-task$/, handler: handleRunTask, rate: RATE_CONFIGS.expensive },
+  { method: "POST", pattern: /^\/api\/run-all$/, handler: handleRunAll, rate: RATE_CONFIGS.expensive },
+  { method: "POST", pattern: /^\/api\/run-full-demo$/, handler: handleRunFullDemo, rate: RATE_CONFIGS.expensive },
+  { method: "POST", pattern: /^\/api\/skip-to-demo$/, handler: handleSkipToDemo, rate: RATE_CONFIGS.cheap },
+  { method: "POST", pattern: /^\/api\/inject-failure$/, handler: handleInjectFailure, rate: RATE_CONFIGS.expensive },
+  { method: "POST", pattern: /^\/api\/approval$/, handler: handleApproval, rate: RATE_CONFIGS.cheap },
+  { method: "POST", pattern: /^\/api\/approve-pr$/, handler: handleApprovePr, rate: RATE_CONFIGS.cheap },
+  { method: "POST", pattern: /^\/api\/rollback-pr$/, handler: handleRollbackPr, rate: RATE_CONFIGS.cheap },
+  { method: "POST", pattern: /^\/api\/request-edits$/, handler: handleRequestEdits, rate: RATE_CONFIGS.expensive },
+  { method: "POST", pattern: /^\/api\/explain$/, handler: handleExplain, rate: RATE_CONFIGS.expensive },
+  { method: "POST", pattern: /^\/api\/deploy$/, handler: handleDeploy, rate: RATE_CONFIGS.cheap },
+  { method: "POST", pattern: /^\/api\/deploy-production$/, handler: handleDeployProduction, rate: RATE_CONFIGS.cheap },
+  { method: "POST", pattern: /^\/api\/reset$/, handler: handleReset, rate: RATE_CONFIGS.cheap },
+  { method: "POST", pattern: /^\/api\/comment$/, handler: handleComment, rate: RATE_CONFIGS.expensive },
 ];
 
 export async function handleApiRequest(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
   const url = req.url ?? "";
   if (!url.startsWith("/api/")) return false;
   const pathname = url.split("?")[0];
+  const requestId = newRequestId();
+  const startedAt = Date.now();
+
   for (const route of ROUTES) {
     if (req.method === route.method && route.pattern.test(pathname)) {
+      // Rate limit if configured.
+      if (route.rate) {
+        const key = clientKey(req as unknown as Parameters<typeof clientKey>[0], pathname);
+        const { allowed, retryAfterMs } = consume(key, route.rate);
+        if (!allowed) {
+          res.setHeader("retry-after", Math.ceil(retryAfterMs / 1000).toString());
+          log.warn("rate_limited", { requestId, route: pathname, method: req.method, retryAfterMs });
+          return sendError(res, 429, "Rate limit exceeded — slow down a moment.", requestId, { retryAfterMs }), true;
+        }
+      }
+
+      log.info("api_start", { requestId, route: pathname, method: req.method });
       try {
-        await route.handler(req, res);
+        await route.handler(req, res, requestId);
+        log.info("api_end", { requestId, route: pathname, ms: Date.now() - startedAt, status: res.statusCode });
       } catch (err) {
-        console.error(`[api] ${route.method} ${pathname} failed:`, err);
-        if (!res.headersSent) sendError(res, 500, (err as Error)?.message ?? "internal error");
+        const error = err as Error;
+        log.error("api_error", { requestId, route: pathname, ms: Date.now() - startedAt, error: error?.message, stack: error?.stack });
+        if (!res.headersSent) sendError(res, 500, error?.message ?? "internal error", requestId);
         else res.end();
       }
       return true;
     }
   }
-  sendError(res, 404, `no route for ${req.method} ${pathname}`);
+  sendError(res, 404, `no route for ${req.method} ${pathname}`, requestId);
   return true;
 }

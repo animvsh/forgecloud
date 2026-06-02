@@ -15,17 +15,23 @@ function AppLayout() {
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
   const pendingApprovals = (data?.approvals ?? []).length;
   const isFallback = data && data.aiAvailable === false;
+  const providerName = data?.providerName ?? "AI";
 
   return (
     <div className="min-h-screen bg-background">
-      {isFallback && (
+      {isFallback ? (
         <div className="flex items-center justify-center gap-2 border-b border-amber/20 bg-amber/10 px-4 py-1.5 text-xs text-amber">
           <AlertTriangle className="size-3" />
           <span>
-            <strong>Demo mode</strong> — AI is in fallback mode (no ANTHROPIC_API_KEY set). All features work, agents respond with template output.
+            <strong>Demo mode</strong> — no LLM credentials configured. All features work; agents return template output. Set <code className="rounded bg-amber/20 px-1">MINIMAX_API_KEY</code> for live intelligence.
           </span>
         </div>
-      )}
+      ) : data && providerName !== "AI" ? (
+        <div className="flex items-center justify-center gap-2 border-b border-mint/20 bg-mint/5 px-4 py-1 text-[10px] uppercase tracking-wider text-mint">
+          <span className="size-1.5 rounded-full bg-mint animate-pulse" />
+          <span>Intelligence: {providerName}</span>
+        </div>
+      ) : null}
       <AppNav pendingApprovals={pendingApprovals} />
       <main className="mx-auto max-w-6xl px-4 pb-16 pt-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
         {total > 0 && (

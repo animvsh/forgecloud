@@ -81,9 +81,25 @@ async function serveStatic(req, res) {
   return true;
 }
 
+// Security headers applied to every response.
+const SECURITY_HEADERS = {
+  "x-content-type-options": "nosniff",
+  "x-frame-options": "SAMEORIGIN",
+  "referrer-policy": "strict-origin-when-cross-origin",
+  "strict-transport-security": "max-age=31536000; includeSubDomains",
+  "permissions-policy": "camera=(), microphone=(), geolocation=()",
+};
+
+function applySecurityHeaders(res) {
+  for (const [k, v] of Object.entries(SECURITY_HEADERS)) {
+    if (!res.hasHeader(k)) res.setHeader(k, v);
+  }
+}
+
 // Convert an incoming Node HTTP request into a Fetch Request and run it
 // through the Nitro/TanStack Start handler.
 const server = createServer(async (req, res) => {
+  applySecurityHeaders(res);
   try {
     // Try static asset first (faster, offloads the SSR runtime).
     if (await serveStatic(req, res)) return;
@@ -141,3 +157,23 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`[server-entry] ForgeCloud listening on http://${HOST}:${PORT}`);
 });
+
+// Graceful shutdown: stop accepting new connections, drain in-flight, exit.
+function shutdown(signal) {
+  console.log(`[server-entry] received ${signal}, shutting down…`);
+  const forceTimer = setTimeout(() => {
+    console.error("[server-entry] forced exit after 10s drain timeout");
+    process.exit(1);
+  }, 10_000);
+  forceTimer.unref?.();
+  server.close((err) => {
+    if (err) {
+      console.error("[server-entry] close error:", err);
+      process.exit(1);
+    }
+    console.log("[server-entry] closed cleanly");
+    process.exit(0);
+  });
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));

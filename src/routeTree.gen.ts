@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as DemoPreviewRouteImport } from './routes/demo-preview'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppIndexRouteImport } from './routes/app.index'
@@ -23,6 +24,11 @@ import { Route as AppChatRouteImport } from './routes/app.chat'
 import { Route as AppChangesRouteImport } from './routes/app.changes'
 import { Route as AppAgentsRouteImport } from './routes/app.agents'
 
+const DemoPreviewRoute = DemoPreviewRouteImport.update({
+  id: '/demo-preview',
+  path: '/demo-preview',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppRoute = AppRouteImport.update({
   id: '/app',
   path: '/app',
@@ -92,6 +98,7 @@ const AppAgentsRoute = AppAgentsRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
+  '/demo-preview': typeof DemoPreviewRoute
   '/app/agents': typeof AppAgentsRoute
   '/app/changes': typeof AppChangesRoute
   '/app/chat': typeof AppChatRoute
@@ -106,6 +113,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/demo-preview': typeof DemoPreviewRoute
   '/app/agents': typeof AppAgentsRoute
   '/app/changes': typeof AppChangesRoute
   '/app/chat': typeof AppChatRoute
@@ -122,6 +130,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
+  '/demo-preview': typeof DemoPreviewRoute
   '/app/agents': typeof AppAgentsRoute
   '/app/changes': typeof AppChangesRoute
   '/app/chat': typeof AppChatRoute
@@ -139,6 +148,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/app'
+    | '/demo-preview'
     | '/app/agents'
     | '/app/changes'
     | '/app/chat'
@@ -153,6 +163,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/demo-preview'
     | '/app/agents'
     | '/app/changes'
     | '/app/chat'
@@ -168,6 +179,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/app'
+    | '/demo-preview'
     | '/app/agents'
     | '/app/changes'
     | '/app/chat'
@@ -184,10 +196,18 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
+  DemoPreviewRoute: typeof DemoPreviewRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/demo-preview': {
+      id: '/demo-preview'
+      path: '/demo-preview'
+      fullPath: '/demo-preview'
+      preLoaderRoute: typeof DemoPreviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/app': {
       id: '/app'
       path: '/app'
@@ -315,6 +335,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
+  DemoPreviewRoute: DemoPreviewRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

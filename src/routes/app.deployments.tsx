@@ -36,7 +36,7 @@ function DeploymentsScreen() {
     setBusy(env);
     try {
       if (env === "production") {
-        await deployProd.mutateAsync(false);
+        await deployProd.mutateAsync({ fail: false });
       } else {
         await deploy.mutateAsync({ environment: env });
       }
@@ -48,7 +48,7 @@ function DeploymentsScreen() {
   async function doFailDeploy() {
     setBusy("fail");
     try {
-      await deployProd.mutateAsync(true);
+      await deployProd.mutateAsync({ fail: true });
     } finally {
       setBusy(null);
     }

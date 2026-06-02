@@ -18,6 +18,8 @@ function ChatScreen() {
   const { data, isLoading } = useForgeState();
   const send = useSendChat();
   const [input, setInput] = useState("");
+  const [addingFeatureFor, setAddingFeatureFor] = useState<string | null>(null);
+  const [extraFeature, setExtraFeature] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -158,7 +160,20 @@ function ChatScreen() {
                         to="/app/tasks"
                         className="inline-flex items-center gap-1.5 rounded-full bg-brand px-4 py-2 text-xs font-medium text-brand-foreground hover:brightness-105 transition-all"
                       >
-                        Approve & start building
+                        Approve &amp; start building
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => setAddingFeatureFor(m.id)}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-xs hover:bg-muted transition-colors"
+                      >
+                        Add feature
+                      </button>
+                      <Link
+                        to="/app/intake"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-xs hover:bg-muted transition-colors"
+                      >
+                        Edit plan
                       </Link>
                       <Link
                         to="/app/agents"
@@ -167,6 +182,41 @@ function ChatScreen() {
                         See the team
                       </Link>
                     </div>
+                    {addingFeatureFor === m.id && (
+                      <form
+                        className="mt-3 flex items-start gap-2 rounded-2xl border border-border bg-background p-3"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (!extraFeature.trim()) return;
+                          const msg = `Add a feature: ${extraFeature.trim()}`;
+                          setExtraFeature("");
+                          setAddingFeatureFor(null);
+                          void handleSend(msg);
+                        }}
+                      >
+                        <input
+                          value={extraFeature}
+                          onChange={(e) => setExtraFeature(e.target.value)}
+                          placeholder="e.g. add a referral link to the thank-you page"
+                          className="flex-1 rounded-xl border-0 bg-transparent px-2 py-1 text-sm outline-none placeholder:text-muted-foreground"
+                          autoFocus
+                        />
+                        <button
+                          type="submit"
+                          disabled={!extraFeature.trim()}
+                          className="rounded-full bg-foreground px-3 py-1.5 text-xs font-medium text-background hover:opacity-90 disabled:opacity-30"
+                        >
+                          Add
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setAddingFeatureFor(null); setExtraFeature(""); }}
+                          className="rounded-full border border-border px-3 py-1.5 text-xs hover:bg-muted"
+                        >
+                          Cancel
+                        </button>
+                      </form>
+                    )}
                   </Message>
                 </div>
               );

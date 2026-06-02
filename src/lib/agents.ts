@@ -1,17 +1,21 @@
 import { getDb, type Agent, type Project, type Task, type PullRequest, type RecoveryEvent } from "./db";
 import { ensureSeed, ids } from "./seed";
 import { classifyRisk, generatePrSummary, narrateRecovery } from "./ai";
+import { getProvider } from "./providers";
+
+const PRIMARY_MODEL = getProvider()?.primaryModel ?? "MiniMax-Text-01";
+const FALLBACK_MODEL = getProvider()?.fallbackModel ?? "MiniMax-M1";
 
 export const AGENT_DEFS = [
-  { type: "product", name: "Product Agent", role: "Turns user requests into features and tasks", defaultModel: "claude-sonnet-4-6" },
-  { type: "design", name: "Design Agent", role: "Creates UI layout and design direction", defaultModel: "claude-sonnet-4-6" },
-  { type: "frontend", name: "Frontend Agent", role: "Builds React components and pages", defaultModel: "claude-sonnet-4-6" },
-  { type: "backend", name: "Backend Agent", role: "Builds APIs, database schema, and auth (uses InsForge)", defaultModel: "claude-sonnet-4-6" },
-  { type: "qa", name: "QA Agent", role: "Tests the app and catches bugs before they ship", defaultModel: "claude-sonnet-4-6" },
-  { type: "devops", name: "DevOps Agent", role: "Builds, deploys, and rolls back on Railway", defaultModel: "claude-sonnet-4-6" },
-  { type: "auth", name: "Auth Agent", role: "Wires up team access and login", defaultModel: "claude-sonnet-4-6" },
-  { type: "safety", name: "Safety Agent", role: "Blocks secrets, dangerous commands, and risky deploys", defaultModel: "claude-sonnet-4-6" },
-  { type: "recovery", name: "Recovery Agent", role: "Handles failures, retries, and rollbacks", defaultModel: "claude-haiku-4-5-20251001" },
+  { type: "product", name: "Product Agent", role: "Turns user requests into features and tasks", defaultModel: PRIMARY_MODEL },
+  { type: "design", name: "Design Agent", role: "Creates UI layout and design direction", defaultModel: PRIMARY_MODEL },
+  { type: "frontend", name: "Frontend Agent", role: "Builds React components and pages", defaultModel: PRIMARY_MODEL },
+  { type: "backend", name: "Backend Agent", role: "Builds APIs, database schema, and auth (uses InsForge)", defaultModel: PRIMARY_MODEL },
+  { type: "qa", name: "QA Agent", role: "Tests the app and catches bugs before they ship", defaultModel: PRIMARY_MODEL },
+  { type: "devops", name: "DevOps Agent", role: "Builds, deploys, and rolls back on Railway", defaultModel: PRIMARY_MODEL },
+  { type: "auth", name: "Auth Agent", role: "Wires up team access and login", defaultModel: PRIMARY_MODEL },
+  { type: "safety", name: "Safety Agent", role: "Blocks secrets, dangerous commands, and risky deploys", defaultModel: PRIMARY_MODEL },
+  { type: "recovery", name: "Recovery Agent", role: "Handles failures, retries, and rollbacks", defaultModel: FALLBACK_MODEL },
 ] as const;
 
 export type AgentType = (typeof AGENT_DEFS)[number]["type"];
@@ -46,7 +50,7 @@ export function createAgentsForProject(projectId: string): Agent[] {
       def.role,
       JSON.stringify(AGENT_PERMS[def.type] ?? { allowed: [], needsApproval: [] }),
       def.defaultModel,
-      "claude-haiku-4-5-20251001",
+      FALLBACK_MODEL,
     );
     const agent = db.prepare("SELECT * FROM agents WHERE id = ?").get(id) as Agent;
     created.push(agent);
@@ -165,7 +169,7 @@ export async function runAgentOnTask(
     agent?.id ?? "unknown",
     taskId,
     `Build feature: ${task.title}`,
-    agent?.model_primary ?? "claude-sonnet-4-6",
+    agent?.model_primary ?? PRIMARY_MODEL,
     Date.now(),
   );
 
@@ -175,7 +179,7 @@ export async function runAgentOnTask(
       runId,
       "model_timeout",
       `${agent?.name ?? "Agent"} timed out on "${task.title}"`,
-      "Switched to fallback model (claude-haiku-4-5) and continued from saved state",
+      `Switched to fallback model (${FALLBACK_MODEL}) and continued from saved state`,
     );
     db.prepare(
       `UPDATE agent_runs SET status = 'recovered', fallback_used = 1, completed_at = ? WHERE id = ?`,

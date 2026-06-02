@@ -1,19 +1,80 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ScreenHeader } from "@/components/ScreenHeader";
-import { MessageCircle, Plus, Loader2, GitBranch, Send, ExternalLink } from "lucide-react";
-import { useState } from "react";
+import {
+  MessageCircle,
+  Plus,
+  Loader2,
+  Send,
+  ExternalLink,
+  MousePointerClick,
+  X,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { useForgeState, useAddComment, useDeploy } from "@/lib/client";
 
 export const Route = createFileRoute("/app/preview")({
   component: PreviewScreen,
 });
 
+const DEMO_PREVIEW_PATH = "/demo-preview";
+
+type PreviewClickMessage = {
+  kind: "preview-click";
+  text: string;
+  selector: string;
+  x: number;
+  y: number;
+};
+
+function isPreviewClickMessage(value: unknown): value is PreviewClickMessage {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return v.kind === "preview-click" && typeof v.text === "string" && typeof v.selector === "string";
+}
+
 function PreviewScreen() {
   const { data, isLoading } = useForgeState();
   const addComment = useAddComment();
   const deploy = useDeploy();
   const [text, setText] = useState("");
+  const [selector, setSelector] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [commentMode, setCommentMode] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Push comment-mode state into the iframe whenever it (or the iframe) changes.
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+    function send() {
+      iframe?.contentWindow?.postMessage({ kind: "set-comment-mode", enabled: commentMode }, "*");
+    }
+    // Send immediately and again on load (the iframe may not be ready yet).
+    send();
+    iframe.addEventListener("load", send);
+    return () => iframe.removeEventListener("load", send);
+  }, [commentMode]);
+
+  // Listen for clicks bubbling out of the iframe.
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      if (event.source !== iframeRef.current?.contentWindow) return;
+      if (!isPreviewClickMessage(event.data)) return;
+      const { text: clickedText, selector: clickedSelector } = event.data;
+      setSelector(clickedSelector);
+      setText((prev) => {
+        // Prefill with clicked text if the user hasn't typed anything custom.
+        if (!prev.trim()) return clickedText;
+        return prev;
+      });
+      // Focus the textarea so the user can keep typing.
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
 
   if (isLoading || !data) {
     return (
@@ -23,19 +84,31 @@ function PreviewScreen() {
     );
   }
 
-  const tasks = data.tasks;
-  const doneTasks = tasks.filter((t) => t.status === "done");
-  const buildingTasks = tasks.filter((t) => t.status === "building");
-  const reviewTasks = tasks.filter((t) => t.status === "review");
-  const comments = (data as any).previewComments ?? [];
-  const liveDeployment = data.deployments.find((d) => d.environment === "preview" && d.status === "live");
+  const comments =
+    (data as { previewComments?: { id: string; text: string; created_at: number }[] })
+      .previewComments ?? [];
+  const liveDeployment = data.deployments.find(
+    (d: { environment: string; status: string }) =>
+      d.environment === "preview" && d.status === "live",
+  );
 
   async function submitComment() {
     if (!text.trim() || addComment.isPending) return;
     setBusy(true);
     try {
-      await addComment.mutateAsync({ text });
+      const result = await addComment.mutateAsync({
+        text,
+        selector: selector ?? undefined,
+      });
       setText("");
+      setSelector(null);
+      const task = result?.task as { title?: string; assigned_agent_name?: string } | undefined;
+      if (task?.title) {
+        const agent = task.assigned_agent_name || "Frontend Agent";
+        toast.success(`Created task: "${task.title}"`, {
+          description: `Assigned to ${agent}`,
+        });
+      }
     } finally {
       setBusy(false);
     }
@@ -57,16 +130,26 @@ function PreviewScreen() {
         subtitle="Click around the app. Comment on anything. ForgeCloud turns comments into tasks."
         action={
           <div className="flex items-center gap-2">
-            {liveDeployment && (
-              <a
-                href={liveDeployment.railway_url || liveDeployment.cloudflare_url || "#"}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs hover:bg-muted"
-              >
-                <ExternalLink className="size-3" /> Open
-              </a>
-            )}
+            <button
+              onClick={() => setCommentMode((v) => !v)}
+              className={
+                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition " +
+                (commentMode
+                  ? "bg-coral text-white shadow-sm hover:brightness-105"
+                  : "border border-border bg-card hover:bg-muted")
+              }
+            >
+              <MousePointerClick className="size-3" />
+              {commentMode ? "Comment mode: on" : "Comment mode"}
+            </button>
+            <a
+              href={DEMO_PREVIEW_PATH}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs hover:bg-muted"
+            >
+              <ExternalLink className="size-3" /> Open
+            </a>
             <button
               onClick={deployPreview}
               disabled={busy}
@@ -89,28 +172,35 @@ function PreviewScreen() {
                 <div className="size-2.5 rounded-full bg-mint" />
               </div>
               <div className="flex-1 max-w-xs rounded-lg bg-background/80 px-3 py-1 font-mono text-[11px] text-center">
-                {liveDeployment?.railway_url || liveDeployment?.cloudflare_url || "preview.forgecloud.dev"}
+                {liveDeployment?.railway_url ||
+                  liveDeployment?.cloudflare_url ||
+                  "preview.forgecloud.dev"}
               </div>
             </div>
-            {liveDeployment && (
-              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-mint">
-                <div className="size-1.5 rounded-full bg-mint animate-pulse" />
-                Live
-              </div>
-            )}
+            <div className="flex items-center gap-3">
+              {commentMode && (
+                <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-coral">
+                  <MousePointerClick className="size-3" />
+                  Comment mode
+                </div>
+              )}
+              {liveDeployment && (
+                <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-mint">
+                  <div className="size-1.5 rounded-full bg-mint animate-pulse" />
+                  Live
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="bg-background p-8 min-h-[480px]">
-            {data.tasks.length === 0 ? (
-              <div className="flex h-full min-h-[400px] items-center justify-center text-center">
-                <div>
-                  <p className="text-muted-foreground">No app built yet.</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Start a project and the agents will build it.</p>
-                </div>
-              </div>
-            ) : (
-              <FakeApp tasks={tasks} />
-            )}
+          <div className="relative bg-background min-h-[560px]">
+            <iframe
+              ref={iframeRef}
+              src={DEMO_PREVIEW_PATH}
+              title="Live app preview"
+              sandbox="allow-scripts allow-forms allow-same-origin"
+              className="block h-[640px] w-full border-0 bg-background"
+            />
           </div>
         </div>
 
@@ -120,7 +210,9 @@ function PreviewScreen() {
               <MessageCircle className="size-4 text-brand" />
               <h3 className="font-semibold">Comments</h3>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">Each comment becomes a task for the AI team.</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Each comment becomes a task for the AI team.
+            </p>
           </div>
           <div className="max-h-96 overflow-y-auto p-4 space-y-2">
             {comments.length === 0 && (
@@ -128,7 +220,7 @@ function PreviewScreen() {
                 No comments yet
               </div>
             )}
-            {comments.map((c: { id: string; text: string; created_at: number }) => (
+            {comments.map((c) => (
               <div key={c.id} className="rounded-xl border border-border bg-background p-3 text-sm">
                 {c.text}
                 <div className="mt-1 text-[10px] text-muted-foreground">
@@ -138,8 +230,23 @@ function PreviewScreen() {
             ))}
           </div>
           <div className="border-t border-border p-4">
+            {selector && (
+              <div className="mb-2 inline-flex max-w-full items-center gap-1.5 rounded-full border border-brand/40 bg-brand/10 px-2.5 py-1 text-[11px] text-foreground">
+                <MousePointerClick className="size-3 shrink-0 text-brand" />
+                <span className="truncate">Clicked: {selector}</span>
+                <button
+                  type="button"
+                  onClick={() => setSelector(null)}
+                  className="ml-1 inline-flex size-4 shrink-0 items-center justify-center rounded-full hover:bg-brand/20"
+                  aria-label="Clear clicked selector"
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
+            )}
             <div className="flex items-end gap-2">
               <textarea
+                ref={textareaRef}
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 placeholder="Make this button bigger. Add a search bar here..."
@@ -178,61 +285,6 @@ function PreviewScreen() {
             </div>
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function FakeApp({ tasks }: { tasks: { title: string; status: string; description: string | null }[] }) {
-  const done = tasks.filter((t) => t.status === "done");
-  const inProgress = tasks.filter((t) => t.status === "building" || t.status === "review");
-  return (
-    <div className="mx-auto max-w-3xl">
-      <div className="rounded-2xl border border-border bg-card p-6">
-        <div className="text-xs text-muted-foreground">Built by your AI team</div>
-        <h1 className="mt-1 text-2xl font-bold">Your app is taking shape</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {done.length} of {tasks.length} features built. {inProgress.length} in progress.
-        </p>
-      </div>
-
-      {done.length > 0 && (
-        <div className="mt-4">
-          <div className="mb-2 text-xs font-semibold text-muted-foreground">Live features</div>
-          <div className="space-y-2">
-            {done.map((t, i) => (
-              <div key={i} className="rounded-xl border border-mint/30 bg-mint/5 p-3 text-sm">
-                <div className="flex items-center gap-2">
-                  <div className="size-2 rounded-full bg-mint" />
-                  <span className="font-medium">{t.title}</span>
-                </div>
-                {t.description && <div className="mt-1 text-xs text-muted-foreground">{t.description}</div>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {inProgress.length > 0 && (
-        <div className="mt-4">
-          <div className="mb-2 text-xs font-semibold text-muted-foreground">In progress</div>
-          <div className="space-y-2">
-            {inProgress.map((t, i) => (
-              <div key={i} className="rounded-xl border border-amber/30 bg-amber/5 p-3 text-sm">
-                <div className="flex items-center gap-2">
-                  <div className="size-2 rounded-full bg-amber animate-pulse" />
-                  <span className="font-medium">{t.title}</span>
-                  <span className="ml-auto text-[10px] uppercase text-amber">{t.status}</span>
-                </div>
-                {t.description && <div className="mt-1 text-xs text-muted-foreground">{t.description}</div>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="mt-6 rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
-        Live preview is a guided visualization. The real app lives at the deployed URL.
       </div>
     </div>
   );

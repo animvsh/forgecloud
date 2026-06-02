@@ -1,17 +1,14 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { getProvider, getProviderName, isProviderAvailable } from "./providers";
 
-let _client: Anthropic | null = null;
+export const AI_MODEL_PRIMARY = (() => {
+  const p = getProvider();
+  return p?.primaryModel ?? "fallback";
+})();
 
-function client(): Anthropic | null {
-  if (_client) return _client;
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return null;
-  _client = new Anthropic({ apiKey });
-  return _client;
-}
-
-export const AI_MODEL_PRIMARY = "claude-sonnet-4-6";
-export const AI_MODEL_FALLBACK = "claude-haiku-4-5-20251001";
+export const AI_MODEL_FALLBACK = (() => {
+  const p = getProvider();
+  return p?.fallbackModel ?? "fallback";
+})();
 
 export type PlanFeature = {
   title: string;
@@ -58,17 +55,11 @@ Rules:
 - Each feature should be a discrete, shippable unit
 - Use plain English. No code, no jargon, no SQL.`;
 
-export async function generateBuildPlan(
-  userPrompt: string,
-): Promise<BuildPlan> {
-  const c = client();
-  if (!c) {
-    return fallbackPlan(userPrompt);
-  }
+export async function generateBuildPlan(userPrompt: string): Promise<BuildPlan> {
+  const provider = getProvider();
+  if (!provider) return fallbackPlan(userPrompt);
   try {
-    const response = await c.messages.create({
-      model: AI_MODEL_PRIMARY,
-      max_tokens: 2048,
+    const text = await provider.complete({
       system: PLAN_SYSTEM,
       messages: [
         {
@@ -76,14 +67,12 @@ export async function generateBuildPlan(
           content: `User request: "${userPrompt}"\n\nGenerate the build plan JSON.`,
         },
       ],
+      maxTokens: 2048,
+      intent: "plan",
     });
-    const text = response.content
-      .filter((b) => b.type === "text")
-      .map((b) => (b as { type: "text"; text: string }).text)
-      .join("");
     return parsePlanJson(text, userPrompt);
   } catch (err) {
-    console.error("AI plan generation failed, using fallback:", err);
+    console.error("[ai] plan generation failed, using fallback:", err);
     return fallbackPlan(userPrompt);
   }
 }
@@ -170,14 +159,12 @@ export async function generatePrSummary(
   featureDescription: string,
   ownerAgent: string,
 ): Promise<string> {
-  const c = client();
-  if (!c) {
+  const provider = getProvider();
+  if (!provider) {
     return `${ownerAgent} shipped "${featureTitle}". ${featureDescription} The team can preview the change and approve, request edits, or roll back.`;
   }
   try {
-    const response = await c.messages.create({
-      model: AI_MODEL_PRIMARY,
-      max_tokens: 256,
+    const text = await provider.complete({
       system: PR_SUMMARY_SYSTEM,
       messages: [
         {
@@ -185,12 +172,9 @@ export async function generatePrSummary(
           content: `Feature: ${featureTitle}\nWhat it does: ${featureDescription}\nAgent: ${ownerAgent}\n\nWrite the PR summary.`,
         },
       ],
+      maxTokens: 256,
+      intent: "summary",
     });
-    const text = response.content
-      .filter((b) => b.type === "text")
-      .map((b) => (b as { type: "text"; text: string }).text)
-      .join("")
-      .trim();
     return text || `${ownerAgent} shipped "${featureTitle}".`;
   } catch {
     return `${ownerAgent} shipped "${featureTitle}". ${featureDescription}`;
@@ -215,28 +199,20 @@ export async function classifyRisk(
 ): Promise<"low" | "med" | "high"> {
   if (isProduction || modifiesAuth) return "high";
   if (modifiesDatabase) return "med";
-  const c = client();
-  if (!c) return "low";
+  const provider = getProvider();
+  if (!provider) return "low";
   try {
-    const response = await c.messages.create({
-      model: AI_MODEL_PRIMARY,
-      max_tokens: 16,
+    const text = await provider.complete({
       system: RISK_SYSTEM,
       messages: [
-        {
-          role: "user",
-          content: `Feature: ${featureTitle}\nDescription: ${featureDescription}`,
-        },
+        { role: "user", content: `Feature: ${featureTitle}\nDescription: ${featureDescription}` },
       ],
+      maxTokens: 16,
+      intent: "risk",
     });
-    const text = response.content
-      .filter((b) => b.type === "text")
-      .map((b) => (b as { type: "text"; text: string }).text)
-      .join("")
-      .trim()
-      .toLowerCase();
-    if (text.includes("high")) return "high";
-    if (text.includes("med")) return "med";
+    const lower = text.toLowerCase();
+    if (lower.includes("high")) return "high";
+    if (lower.includes("med")) return "med";
     return "low";
   } catch {
     return "low";
@@ -252,14 +228,10 @@ export async function narrateRecovery(
   failureMessage: string,
   recoveryAction: string,
 ): Promise<string> {
-  const c = client();
-  if (!c) {
-    return `${failureMessage} ${recoveryAction}.`;
-  }
+  const provider = getProvider();
+  if (!provider) return `${failureMessage} ${recoveryAction}.`;
   try {
-    const response = await c.messages.create({
-      model: AI_MODEL_PRIMARY,
-      max_tokens: 100,
+    const text = await provider.complete({
       system: RECOVERY_SYSTEM,
       messages: [
         {
@@ -267,18 +239,111 @@ export async function narrateRecovery(
           content: `Failure: ${failureType} — ${failureMessage}\nRecovery: ${recoveryAction}\n\nNarrate it.`,
         },
       ],
+      maxTokens: 100,
+      intent: "narrate",
     });
-    const text = response.content
-      .filter((b) => b.type === "text")
-      .map((b) => (b as { type: "text"; text: string }).text)
-      .join("")
-      .trim();
     return text || `${recoveryAction}.`;
   } catch {
     return `${failureMessage} ${recoveryAction}.`;
   }
 }
 
+const EXPLAIN_SYSTEM = `You are the Safety Agent for ForgeCloud. The user is a non-technical founder reviewing a risky change.
+
+In 2-4 short sentences, explain in plain English:
+1. What this change does
+2. Why it is risky
+3. What could go wrong if approved without thinking
+4. What the agent has done to make it safer
+
+Output ONLY the explanation. No JSON, no preamble, no markdown headers.`;
+
+export async function explainRiskyChange(
+  reason: string,
+  details: string,
+  riskLevel: string,
+): Promise<string> {
+  const provider = getProvider();
+  if (!provider) {
+    return `${reason}. ${details} Risk level: ${riskLevel}. The Safety Agent has flagged this for human review before it can ship.`;
+  }
+  try {
+    const text = await provider.complete({
+      system: EXPLAIN_SYSTEM,
+      messages: [
+        {
+          role: "user",
+          content: `Reason: ${reason}\nDetails: ${details}\nRisk: ${riskLevel}\n\nExplain it for a non-technical founder.`,
+        },
+      ],
+      maxTokens: 220,
+      intent: "explain",
+    });
+    return text || `${reason}. ${details}`;
+  } catch {
+    return `${reason}. ${details}`;
+  }
+}
+
+const COMMENT_TO_TASK_SYSTEM = `You are the Product Agent. A non-technical user clicked something in the app's live preview and left a comment. Convert it into a clean engineering task.
+
+Output ONLY valid JSON of shape:
+{ "title": "2-5 word task title", "description": "1-2 sentence plain-English description", "ownerAgent": "Frontend Agent" | "Backend Agent" | "Design Agent", "riskLevel": "low" | "med" | "high" }
+
+Rules:
+- Most cosmetic comments → Design Agent, low risk.
+- New form fields or new pages → Frontend Agent, low risk.
+- Database / API / "save this" / "store this" → Backend Agent, med risk.
+- Never invent a task that wasn't asked for.`;
+
+export type CommentTask = {
+  title: string;
+  description: string;
+  ownerAgent: string;
+  riskLevel: "low" | "med" | "high";
+};
+
+export async function commentToTask(commentText: string, selector?: string | null): Promise<CommentTask> {
+  const provider = getProvider();
+  const fallback: CommentTask = {
+    title: commentText.slice(0, 60),
+    description: commentText,
+    ownerAgent: "Frontend Agent",
+    riskLevel: "low",
+  };
+  if (!provider) return fallback;
+  try {
+    const text = await provider.complete({
+      system: COMMENT_TO_TASK_SYSTEM,
+      messages: [
+        {
+          role: "user",
+          content: `Comment: "${commentText}"${selector ? `\nClicked element: ${selector}` : ""}\n\nReturn the task JSON.`,
+        },
+      ],
+      maxTokens: 256,
+      intent: "task",
+    });
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) return fallback;
+    const parsed = JSON.parse(match[0]);
+    return {
+      title: String(parsed.title ?? fallback.title).slice(0, 80),
+      description: String(parsed.description ?? fallback.description).slice(0, 400),
+      ownerAgent: String(parsed.ownerAgent ?? fallback.ownerAgent),
+      riskLevel: (["low", "med", "high"] as const).includes(parsed.riskLevel)
+        ? parsed.riskLevel
+        : "low",
+    };
+  } catch {
+    return fallback;
+  }
+}
+
 export function isAiAvailable(): boolean {
-  return client() !== null;
+  return isProviderAvailable();
+}
+
+export function activeProviderName(): string {
+  return getProviderName();
 }

@@ -1,9 +1,13 @@
 import { getDb, type User, type Workspace } from "./db";
 import { randomUUID } from "node:crypto";
+import { getProvider } from "./providers";
 
 const DEFAULT_USER_ID = "user-animesh";
 const DEFAULT_WORKSPACE_ID = "ws-default";
 const DEMO_PROJECT_ID = "proj-pielot-waitlist";
+
+const SEED_PRIMARY_MODEL = getProvider()?.primaryModel ?? "MiniMax-Text-01";
+const SEED_FALLBACK_MODEL = getProvider()?.fallbackModel ?? "MiniMax-M1";
 
 export function ensureSeed(): { user: User; workspace: Workspace } {
   const db = getDb();
@@ -125,8 +129,8 @@ function seedDemoProject() {
       role,
       JSON.stringify(["approve", "request", "view"]),
       status,
-      "claude-sonnet-4-6",
-      "claude-haiku-4-5-20251001",
+      SEED_PRIMARY_MODEL,
+      SEED_FALLBACK_MODEL,
       lastAction,
       now - 1000 * 60 * 5,
       0,
@@ -201,9 +205,43 @@ function seedDemoProject() {
     );
   }
 
+  // Per-PR change rows (so the Changes screen has realistic per-file content).
+  const changeRows: Array<[string, string, string, string, string, string | null]> = [
+    // pr-1 (waitlist landing page)
+    ["chg-1a", "pr-1", "ui/landing-hero.tsx", "+ added hero section with email signup\n- removed placeholder copy", "Added a new hero section with the headline, sub-headline, and email signup input.", null],
+    ["chg-1b", "pr-1", "ui/feature-grid.tsx", "+ added 3-column feature grid\n+ added supporting copy", "Built a three-card feature grid below the hero.", null],
+    ["chg-1c", "pr-1", "ui/landing.css", "+ added warm gradient + softer corners", "Updated styling to match the warm, modern brand direction.", null],
+    ["chg-1d", "pr-1", "lib/track-visit.ts", "+ wired up an anonymous page-visit ping", "Tracks page visits anonymously to measure how many people see the landing page.", null],
+
+    // pr-2 (email confirmation)
+    ["chg-2a", "pr-2", "api/send-confirmation.ts", "+ sends a welcome email\n+ 30-minute token TTL", "When a user signs up, send a welcome email with a confirmation link. Token expires after 30 minutes.", null],
+    ["chg-2b", "pr-2", "ui/thank-you.tsx", "+ added 'Resend confirmation' button", "Added a Resend button on the thank-you page so users can request a fresh email.", null],
+    ["chg-2c", "pr-2", "templates/welcome-email.html", "+ added the welcome email template", "Designed the welcome email template — plain text + a brand-colored CTA.", null],
+
+    // pr-3 (position in line)
+    ["chg-3a", "pr-3", "ui/thank-you.tsx", "+ added position badge\n+ pulled signup_rank from API", "Show each user their position in line based on signup order.", null],
+    ["chg-3b", "pr-3", "api/get-position.ts", "+ new endpoint returns the user's signup rank", "Backend endpoint returns the user's rank in the waitlist.", null],
+
+    // pr-4 (admin dashboard)
+    ["chg-4a", "pr-4", "ui/admin/dashboard.tsx", "+ summary cards (total, today, top referrer)\n+ filterable signups table", "New admin screen with total signups, today's count, top referrer, and a filterable list.", null],
+    ["chg-4b", "pr-4", "ui/admin/export-csv.ts", "+ wired up CSV export of the signups table", "Adds a CSV export button so the team can download signups.", null],
+    ["chg-4c", "pr-4", "api/admin/list-signups.ts", "+ paginated list endpoint with filters", "Paginated backend endpoint that the admin dashboard reads from.", null],
+    ["chg-4d", "pr-4", "api/auth/require-admin.ts", "+ guards the admin endpoints", "Only signed-in admins can hit the new endpoints.", null],
+    ["chg-4e", "pr-4", "ui/admin/signups-table.tsx", "+ table with sort and search", "The signups table — sortable and searchable.", null],
+
+    // pr-5 (referrer_code DB migration — HIGH RISK)
+    ["chg-5a", "pr-5", "migrations/0007_add_referrer_code.sql", "+ ALTER TABLE waitlist_signups ADD COLUMN referrer_code text\n+ CREATE INDEX idx_signups_referrer_code", "Adds a new column to the signups table and an index. Existing rows are filled with NULL.", "Modifies database schema — review carefully before approving."],
+  ];
+  const insertChange = db.prepare(
+    `INSERT OR REPLACE INTO changes (id, pr_id, file_path, technical_diff, plain_english_summary, risk_explanation, agent_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  );
+  for (const [id, prId, filePath, diff, summary, riskExplanation] of changeRows) {
+    insertChange.run(id, prId, filePath, diff, summary, riskExplanation, agentIds["frontend"] ?? null);
+  }
+
   // Recovery events
   const recoveries: Array<[string, string, string, string, string, number]> = [
-    ["rec-1", "model_timeout", "Primary model timed out on Frontend Agent while rendering the signup form", "Switched to fallback model (claude-haiku-4-5) and continued from saved state", "recovered", now - 1000 * 60 * 60 * 18],
+    ["rec-1", "model_timeout", "Primary model timed out on Frontend Agent while rendering the signup form", `Switched to fallback model (${SEED_FALLBACK_MODEL}) and continued from saved state`, "recovered", now - 1000 * 60 * 60 * 18],
     ["rec-2", "build_failed", "Build failed on the latest PR — TypeScript error in Form.tsx", "QA Agent isolated the bad file, Frontend Agent shipped a fix, build re-ran successfully", "recovered", now - 1000 * 60 * 60 * 8],
     ["rec-3", "secret_detected", "Safety Agent detected a hardcoded sk- credential in the email-template generator", "Safety Agent blocked the PR before merge — secrets never reach production", "blocked", now - 1000 * 60 * 60 * 4],
   ];
@@ -268,10 +306,10 @@ function seedDemoProject() {
 
   // Agent runs
   const runs: Array<[string, string, string, string, string, number, number | null]> = [
-    ["run-1", "frontend", "task-1", "completed", "claude-sonnet-4-6", now - 1000 * 60 * 60 * 24 * 2, now - 1000 * 60 * 60 * 24 * 2 + 1000 * 60 * 60],
-    ["run-2", "frontend", "task-1", "recovered", "claude-haiku-4-5-20251001", now - 1000 * 60 * 60 * 18, now - 1000 * 60 * 60 * 18 + 1000 * 60 * 10],
-    ["run-3", "frontend", "task-2", "completed", "claude-sonnet-4-6", now - 1000 * 60 * 60 * 24, now - 1000 * 60 * 60 * 24 + 1000 * 60 * 30],
-    ["run-4", "frontend", "task-5", "running", "claude-sonnet-4-6", now - 1000 * 60 * 60 * 3, null],
+    ["run-1", "frontend", "task-1", "completed", SEED_PRIMARY_MODEL, now - 1000 * 60 * 60 * 24 * 2, now - 1000 * 60 * 60 * 24 * 2 + 1000 * 60 * 60],
+    ["run-2", "frontend", "task-1", "recovered", SEED_FALLBACK_MODEL, now - 1000 * 60 * 60 * 18, now - 1000 * 60 * 60 * 18 + 1000 * 60 * 10],
+    ["run-3", "frontend", "task-2", "completed", SEED_PRIMARY_MODEL, now - 1000 * 60 * 60 * 24, now - 1000 * 60 * 60 * 24 + 1000 * 60 * 30],
+    ["run-4", "frontend", "task-5", "running", SEED_PRIMARY_MODEL, now - 1000 * 60 * 60 * 3, null],
   ];
   const insertRun = db.prepare(
     `INSERT OR REPLACE INTO agent_runs (id, project_id, agent_id, task_id, status, input_prompt, model_used, fallback_used, started_at, completed_at, output_summary)
@@ -286,7 +324,7 @@ function seedDemoProject() {
       status,
       `Build feature: ${taskId}`,
       model,
-      model === "claude-haiku-4-5-20251001" ? 1 : 0,
+      model === SEED_FALLBACK_MODEL ? 1 : 0,
       startedAt,
       completedAt,
       completedAt ? `Shipped PR` : null,

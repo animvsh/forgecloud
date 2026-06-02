@@ -148,3 +148,28 @@ export function useAddComment() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }
+
+export function useExplain() {
+  return useMutation({
+    mutationFn: (vars: { approvalId?: string; prId?: string }) =>
+      apiPost<{ explanation: string; provider: string }>("/api/explain", vars),
+  });
+}
+
+export function useRollbackPr() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { prId: string }) =>
+      apiPost<{ ok: true; prId: string }>("/api/rollback-pr", vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
+
+export function useRequestEdits() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { prId: string; message: string }) =>
+      apiPost<{ ok: true; task: any }>("/api/request-edits", vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
