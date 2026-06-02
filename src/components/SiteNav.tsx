@@ -5,6 +5,7 @@ import {
   ListChecks,
   Eye,
   GitBranch,
+  GitPullRequest,
   ShieldAlert,
   Rocket,
   Users,
@@ -90,7 +91,7 @@ const sections: { key: "build" | "review" | "track"; tone: string; items: NavIte
     key: "review",
     tone: "var(--violet)",
     items: [
-      { to: "/app/changes", label: "PRs", icon: GitBranch },
+      { to: "/app/changes", label: "PRs", icon: GitPullRequest },
       { to: "/app/branches", label: "Branches", icon: GitBranch, key: "branches" },
       { to: "/app/failures", label: "Recovery", icon: ShieldAlert },
     ],
@@ -116,17 +117,20 @@ export function AppNav({ pendingApprovals = 0 }: { pendingApprovals?: number }) 
   const unread = data?.notificationsUnread ?? 0;
 
   return (
-    <header className="sticky top-4 z-50 flex justify-center px-4">
-      <nav className="pill-nav flex items-center gap-0.5 px-2 py-2 max-w-[calc(100vw-2rem)] overflow-x-auto">
-        <Link to="/" className="flex items-center gap-2 px-3 py-1.5 font-semibold shrink-0">
+    <header className="sticky top-4 z-50 flex justify-center px-2 sm:px-4">
+      <nav className="pill-nav flex flex-wrap items-center justify-center gap-x-0.5 gap-y-1 px-1.5 sm:px-2 py-2 w-full max-w-6xl">
+        <Link to="/" className="flex items-center gap-2 px-2 sm:px-3 py-1.5 font-semibold shrink-0">
           <span className="inline-block size-4 rounded bg-foreground" />
           <span className="hidden sm:inline">ForgeCloud</span>
         </Link>
         <div className="mx-1 h-5 w-px bg-border shrink-0" />
         <ProjectSwitcher />
-        <div className="mx-1 h-5 w-px bg-border shrink-0" />
-        {sections.map((section, sectionIdx) => (
-          <div key={section.key} className="flex items-center gap-0.5 shrink-0">
+        {sections.map((section) => (
+          <div
+            key={section.key}
+            className="flex items-center gap-0.5 shrink-0 max-[420px]:basis-full max-[420px]:justify-center max-[420px]:border-t max-[420px]:border-border max-[420px]:pt-1 max-[420px]:mt-1"
+          >
+            <div className="mx-1 h-5 w-px bg-border shrink-0" />
             {section.items.map((n) => {
               const active = pathname === n.to || (n.key === "branches" && pathname.startsWith("/app/branches"));
               const isRecovery = n.label === "Recovery";
@@ -134,7 +138,7 @@ export function AppNav({ pendingApprovals = 0 }: { pendingApprovals?: number }) 
                 <Link
                   key={n.to}
                   to={n.to}
-                  className={`group relative flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-medium shrink-0 transition-all duration-200 ${
+                  className={`group relative flex items-center gap-1.5 rounded-full px-2 sm:px-2.5 py-1.5 text-xs font-medium shrink-0 transition-all duration-200 ${
                     active
                       ? "bg-foreground text-background shadow-sm"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted"
@@ -151,7 +155,6 @@ export function AppNav({ pendingApprovals = 0 }: { pendingApprovals?: number }) 
                 </Link>
               );
             })}
-            {sectionIdx < sections.length - 1 && <div className="mx-1 h-5 w-px bg-border" />}
           </div>
         ))}
         <div className="mx-1 h-5 w-px bg-border shrink-0" />
