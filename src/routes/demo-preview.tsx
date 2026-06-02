@@ -137,6 +137,7 @@ const EVENTS = [
 function PleasurePizzaOpsApp() {
   const [commentMode, setCommentMode] = useState(false);
   const [blameMode, setBlameMode] = useState(false);
+  const [activeTab, setActiveTab] = useState<number>(0);
   const hoveredRef = useRef<HTMLElement | null>(null);
 
   // Listen for parent postMessage to toggle modes.
@@ -287,12 +288,16 @@ function PleasurePizzaOpsApp() {
           </div>
           <nav className="hidden items-center gap-1 text-sm sm:flex">
             {TABS.map((tab, i) => {
-              const active = i === 0;
+              const active = activeTab === i;
               return (
-                <a
+                <button
                   key={tab}
-                  href="#"
-                  onClick={swallow}
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!activeMode) setActiveTab(i);
+                  }}
                   data-pretty-name={`Tab: ${tab}`}
                   className={
                     "rounded-full px-3 py-1.5 text-xs transition " +
@@ -302,7 +307,7 @@ function PleasurePizzaOpsApp() {
                   }
                 >
                   {tab}
-                </a>
+                </button>
               );
             })}
           </nav>
@@ -316,7 +321,8 @@ function PleasurePizzaOpsApp() {
       </header>
 
       <main className="mx-auto max-w-6xl space-y-6 px-6 py-6">
-        {/* Today hero */}
+        {/* Today hero — Dashboard only */}
+        {activeTab === 0 && (
         <section data-pretty-name="Today hero section">
           <div className="mb-3 flex items-center justify-between">
             <div>
@@ -340,8 +346,10 @@ function PleasurePizzaOpsApp() {
             ))}
           </div>
         </section>
+        )}
 
-        {/* Sales by hour */}
+        {/* Sales by hour — Dashboard only */}
+        {activeTab === 0 && (
         <section
           className="rounded-3xl border border-border bg-card p-5"
           data-pretty-name="Sales by hour card"
@@ -411,9 +419,13 @@ function PleasurePizzaOpsApp() {
             ))}
           </div>
         </section>
+        )}
 
+        {/* Customer + Complaints — Dashboard, Customers, Complaints tabs */}
+        {(activeTab === 0 || activeTab === 1 || activeTab === 4) && (
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Customer winback table */}
+          {(activeTab === 0 || activeTab === 1) && (
           <section
             className="rounded-3xl border border-border bg-card p-5 lg:col-span-2"
             data-pretty-name="Customer winback card"
@@ -465,8 +477,10 @@ function PleasurePizzaOpsApp() {
               </table>
             </div>
           </section>
+          )}
 
           {/* Recent complaints */}
+          {(activeTab === 0 || activeTab === 4) && (
           <section
             className="rounded-3xl border border-border bg-card p-5"
             data-pretty-name="Recent complaints card"
@@ -495,9 +509,12 @@ function PleasurePizzaOpsApp() {
               ))}
             </ul>
           </section>
+          )}
         </div>
+        )}
 
-        {/* Promo builder */}
+        {/* Promo builder — Dashboard, Promos tabs */}
+        {(activeTab === 0 || activeTab === 2) && (
         <section
           className="rounded-3xl border border-border bg-card p-5"
           data-pretty-name="Promo builder card"
@@ -571,9 +588,13 @@ function PleasurePizzaOpsApp() {
             </button>
           </div>
         </section>
+        )}
 
+        {/* Staff + Catering — Dashboard, Staff, Catering tabs */}
+        {(activeTab === 0 || activeTab === 3 || activeTab === 5) && (
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Staff tasks */}
+          {(activeTab === 0 || activeTab === 3) && (
           <section
             className="rounded-3xl border border-border bg-card p-5"
             data-pretty-name="Staff tasks card"
@@ -614,8 +635,10 @@ function PleasurePizzaOpsApp() {
               ))}
             </ul>
           </section>
+          )}
 
           {/* Catering & events */}
+          {(activeTab === 0 || activeTab === 5) && (
           <section
             className="rounded-3xl border border-border bg-card p-5"
             data-pretty-name="Catering events card"
@@ -658,7 +681,9 @@ function PleasurePizzaOpsApp() {
               ))}
             </ul>
           </section>
+          )}
         </div>
+        )}
       </main>
 
       <footer className="border-t border-border bg-card/40" data-pretty-name="Footer">

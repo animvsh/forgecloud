@@ -113,12 +113,12 @@ function PreviewScreen() {
     async function onMessage(event: MessageEvent) {
       if (event.source !== iframeRef.current?.contentWindow) return;
       if (isPreviewClickMessage(event.data)) {
-        const { text: clickedText, selector: clickedSelector } = event.data;
+        const { selector: clickedSelector } = event.data;
+        // Store the selector so /api/comment can attach the comment to the right
+        // element, but DO NOT pre-fill the textarea. The user's typed text is the
+        // canonical comment — auto-filling with the card text was clobbering the
+        // user's intent (e.g. "make this number bigger" → "TODAY'S SALES $1,284").
         setSelector(clickedSelector);
-        setText((prev) => {
-          if (!prev.trim()) return clickedText;
-          return prev;
-        });
         requestAnimationFrame(() => textareaRef.current?.focus());
         return;
       }

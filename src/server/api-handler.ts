@@ -61,6 +61,7 @@ import { getProvider } from "../lib/providers";
 
 const SERVER_STARTED_AT = Date.now();
 const APP_VERSION = process.env.APP_VERSION ?? "0.1.0";
+const DEMO_PROJECT_ID = "proj-pleasure-pizza";
 
 // ---------- shared helpers ---------------------------------------------------
 
@@ -907,8 +908,23 @@ async function handleReset(
   for (const t of tables) d.prepare(`DELETE FROM ${t} WHERE project_id = ?`).run(projectId);
   d.prepare(`DELETE FROM notifications WHERE project_id = ?`).run(projectId);
   d.prepare(`UPDATE projects SET status = 'intake' WHERE id = ?`).run(projectId);
+  // Clean up any non-canonical projects created by past /api/intake or /api/projects
+  // calls so the demo state stays tidy. The canonical project is preserved.
+  const nonCanonical = d
+    .prepare(`SELECT id FROM projects WHERE id != ?`)
+    .all(DEMO_PROJECT_ID) as { id: string }[];
+  if (nonCanonical.length > 0) {
+    for (const { id: pid } of nonCanonical) {
+      d.prepare(
+        `DELETE FROM changes WHERE pr_id IN (SELECT id FROM pull_requests WHERE project_id = ?)`,
+      ).run(pid);
+      for (const t of tables) d.prepare(`DELETE FROM ${t} WHERE project_id = ?`).run(pid);
+      d.prepare(`DELETE FROM notifications WHERE project_id = ?`).run(pid);
+      d.prepare(`DELETE FROM projects WHERE id = ?`).run(pid);
+    }
+  }
   // If the active project is the canonical Pleasure Pizza demo, re-seed it.
-  if (projectId === "proj-pleasure-pizza") {
+  if (projectId === DEMO_PROJECT_ID) {
     try {
       seedDemoProject();
     } catch (err) {
