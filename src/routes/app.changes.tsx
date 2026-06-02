@@ -214,7 +214,7 @@ function ChangesScreen() {
           <div className="rounded-3xl border-2 border-amber bg-amber/5 p-6">
             <div className="flex items-center gap-2 text-amber">
               <AlertTriangle className="size-4" />
-              <h3 className="font-semibold">Approval queue</h3>
+              <h2 className="font-semibold">Approval queue</h2>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
               Risky changes need your review before they ship.
@@ -310,7 +310,7 @@ function ChangesScreen() {
         )}
 
         <div className="space-y-3">
-          <h3 className="text-lg font-semibold">All changes</h3>
+          <h2 className="text-lg font-semibold">All changes</h2>
           {prs.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border bg-card p-8 text-center text-sm text-muted-foreground">
               No changes yet. Agents create PRs as they build features.

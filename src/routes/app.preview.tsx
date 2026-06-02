@@ -300,7 +300,7 @@ function PreviewScreen() {
           <div className="border-b border-border p-4">
             <div className="flex items-center gap-2">
               <MessageCircle className="size-4 text-brand" />
-              <h3 className="font-semibold">Comments</h3>
+              <h2 className="font-semibold">Comments</h2>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
               Each comment becomes a task for the AI team.
@@ -354,6 +354,8 @@ function PreviewScreen() {
               <button
                 onClick={submitComment}
                 disabled={!text.trim() || busy}
+                aria-label="Submit comment"
+                title="Submit comment (Enter)"
                 className="flex size-9 items-center justify-center rounded-xl bg-foreground text-background hover:opacity-90 disabled:opacity-30"
               >
                 {busy ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}

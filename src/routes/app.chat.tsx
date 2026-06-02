@@ -268,6 +268,8 @@ function ChatScreen() {
           <button
             type="submit"
             disabled={!input.trim() || send.isPending}
+            aria-label="Send message"
+            title="Send message (Enter)"
             className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-brand to-violet text-white shadow-md hover:shadow-lg hover:scale-105 transition-all disabled:opacity-30 disabled:hover:scale-100"
           >
             <ArrowUp className="size-5" />

@@ -96,9 +96,9 @@ function DeploymentsScreen() {
         }
       />
 
-      <div className="space-y-6 p-8">
+      <div className="space-y-6 p-4 sm:p-8">
         <div className="rounded-3xl border border-border bg-card overflow-hidden">
-          <div className="border-b border-border bg-muted/40 px-5 py-3">
+          <div className="hidden sm:block border-b border-border bg-muted/40 px-5 py-3">
             <div className="grid grid-cols-12 text-xs uppercase tracking-wider text-muted-foreground">
               <div className="col-span-2">Environment</div>
               <div className="col-span-2">Status</div>
@@ -111,9 +111,9 @@ function DeploymentsScreen() {
             {(["preview", "staging", "production"] as const).map((env) => {
               const d = deployments.find((dep) => dep.environment === env);
               return (
-                <div key={env} className="grid grid-cols-12 items-center px-5 py-4 text-sm transition-colors hover:bg-muted/30">
-                  <div className="col-span-2 font-medium capitalize">{env}</div>
-                  <div className="col-span-2">
+                <div key={env} className="grid grid-cols-1 sm:grid-cols-12 sm:items-center gap-3 sm:gap-0 px-5 py-4 text-sm transition-colors hover:bg-muted/30">
+                  <div className="sm:col-span-2 font-medium capitalize">{env}</div>
+                  <div className="sm:col-span-2">
                     {d ? (
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
                         d.status === "live" ? "bg-mint/20 text-mint" :
@@ -128,13 +128,13 @@ function DeploymentsScreen() {
                       </span>
                     )}
                   </div>
-                  <div className="col-span-4 font-mono text-xs truncate">
+                  <div className="sm:col-span-4 font-mono text-xs truncate">
                     {d?.railway_url || d?.cloudflare_url || "—"}
                   </div>
-                  <div className="col-span-3 text-xs text-muted-foreground">
+                  <div className="sm:col-span-3 text-xs text-muted-foreground">
                     {d ? new Date(d.created_at).toLocaleString() : "—"}
                   </div>
-                  <div className="col-span-1 text-right">
+                  <div className="sm:col-span-1 sm:text-right">
                     {d && (d.railway_url || d.cloudflare_url) && (
                       <a
                         href={d.railway_url || d.cloudflare_url || "#"}
