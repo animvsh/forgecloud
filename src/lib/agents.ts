@@ -158,10 +158,28 @@ export async function runAgentOnTask(
   const db = getDb();
   const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId) as Task;
   if (!task) throw new Error(`Task ${taskId} not found`);
+  // M2: refuse to clobber a task that's already done/in-progress — return a recovery event instead.
+  if (task.status !== "backlog") {
+    const recovery = await triggerFailure(
+      task.project_id,
+      null,
+      "guardrail_blocked",
+      `Task "${task.title}" is already in ${task.status} — won't re-run.`,
+      `Move it back to backlog first, or open the existing PR for review.`,
+    );
+    return { task, recovery };
+  }
 
-  const agent = task.assigned_agent_id
+  let agent: Agent | undefined = task.assigned_agent_id
     ? (db.prepare("SELECT * FROM agents WHERE id = ?").get(task.assigned_agent_id) as Agent | undefined)
     : undefined;
+  // B2: if the assigned agent is missing (stale FK, etc.), fall back to the project's Frontend Agent
+  // so the agent_runs row has a valid agent_id.
+  if (!agent) {
+    agent = db
+      .prepare("SELECT * FROM agents WHERE project_id = ? AND type = 'frontend' LIMIT 1")
+      .get(task.project_id) as Agent | undefined;
+  }
 
   db.prepare(`UPDATE tasks SET status = 'building' WHERE id = ?`).run(taskId);
   if (agent) {
@@ -176,7 +194,7 @@ export async function runAgentOnTask(
   ).run(
     runId,
     task.project_id,
-    agent?.id ?? "unknown",
+    agent?.id ?? null,
     taskId,
     `Build: ${task.title}`,
     agent?.model_primary ?? PRIMARY_MODEL,
@@ -196,7 +214,6 @@ export async function runAgentOnTask(
       db.prepare(
         `UPDATE agent_runs SET status = 'recovered', fallback_used = 1, completed_at = ? WHERE id = ?`,
       ).run(Date.now(), runId);
-      db.prepare(`UPDATE tasks SET status = 'backlog' WHERE id = ?`).run(taskId);
       result = { task, recovery };
     } else if (failureType === "build_failed") {
       const recovery = await triggerFailure(
@@ -209,7 +226,6 @@ export async function runAgentOnTask(
       db.prepare(
         `UPDATE agent_runs SET status = 'recovered', completed_at = ? WHERE id = ?`,
       ).run(Date.now(), runId);
-      db.prepare(`UPDATE tasks SET status = 'backlog' WHERE id = ?`).run(taskId);
       result = { task, recovery };
     } else {
       try {
@@ -219,26 +235,59 @@ export async function runAgentOnTask(
         // the task must NOT stay in "building" — return it to backlog with a recovery event
         // so the user can retry it, and the agent's current_task_id is cleared by the finally.
         const msg = (err as Error)?.message ?? String(err);
-        logger.error({ err, runId, taskId }, "runTaskSuccess threw — resetting task to backlog");
-        const recovery = await triggerFailure(
-          task.project_id,
-          runId,
-          "build_failed",
-          `${agent?.name ?? "Agent"} encountered an unexpected error on "${task.title}": ${msg}`,
-          "Task was returned to the backlog. Review the error, then click Build now to retry.",
-        );
-        db.prepare(
-          `UPDATE agent_runs SET status = 'recovered', output_summary = ?, completed_at = ? WHERE id = ?`,
-        ).run(`Error: ${msg.slice(0, 200)}`, Date.now(), runId);
-        db.prepare(`UPDATE tasks SET status = 'backlog' WHERE id = ?`).run(taskId);
-        result = { task, recovery };
+        logger.error("runTaskSuccess threw — resetting task to backlog", { err, runId, taskId });
+        try {
+          const recovery = await triggerFailure(
+            task.project_id,
+            runId,
+            "build_failed",
+            `${agent?.name ?? "Agent"} encountered an unexpected error on "${task.title}": ${msg}`,
+            "Task was returned to the backlog. Review the error, then click Build now to retry.",
+          );
+          db.prepare(
+            `UPDATE agent_runs SET status = 'recovered', output_summary = ?, completed_at = ? WHERE id = ?`,
+          ).run(`Error: ${msg.slice(0, 200)}`, Date.now(), runId);
+          result = { task, recovery };
+        } catch (innerErr) {
+          // B1: if the recovery-event path itself fails (DB locked, FK violation, etc.),
+          // still record a minimal recovery so the user has something to act on, and
+          // surface a useful error to the caller. The finally block will reset the
+          // task to backlog.
+          logger.error("triggerFailure threw — fallback recovery", { err: innerErr, taskId });
+          try {
+            db.prepare(
+              `INSERT INTO recovery_events (id, project_id, agent_run_id, failure_type, failure_message, recovery_action, status, created_at)
+               VALUES (?, ?, ?, 'build_failed', ?, 'Task reset to backlog.', 'recovered', ?)`,
+            ).run(
+              ids.newRecovery(),
+              task.project_id,
+              runId,
+              `Nested failure: ${msg.slice(0, 200)}`,
+              Date.now(),
+            );
+          } catch {
+            // Last-resort: do nothing — the task reset below is the user's lifeline.
+          }
+          throw err;
+        }
       }
     }
     return result;
   } finally {
-    // P0-6 + P0-7: always clear agent's current_task_id and idle it, regardless of how we exited.
+    // P0-6 + P0-7 + B1: always clear agent's current_task_id + idle it, AND reset
+    // the task to backlog so it never gets stuck in "building" — even if the entire
+    // try block threw before reaching a successful return.
     if (agent) {
-      db.prepare(`UPDATE agents SET current_task_id = NULL, status = 'idle' WHERE id = ?`).run(agent.id);
+      try {
+        db.prepare(`UPDATE agents SET current_task_id = NULL, status = 'idle' WHERE id = ?`).run(agent.id);
+      } catch {
+        // best-effort
+      }
+    }
+    try {
+      db.prepare(`UPDATE tasks SET status = 'backlog' WHERE id = ? AND status = 'building'`).run(taskId);
+    } catch {
+      // best-effort
     }
   }
 }
@@ -400,13 +449,14 @@ export async function triggerFailure(
 export function recordSecretBlock(projectId: string, prId: string | null, secret: string): void {
   const db = getDb();
   const id = ids.newRecovery();
+  const humanLabel = labelForSecret(secret);
   db.prepare(
     `INSERT INTO recovery_events (id, project_id, agent_run_id, failure_type, failure_message, recovery_action, status, created_at)
      VALUES (?, ?, NULL, 'secret_detected', ?, 'Safety Agent blocked the PR before merge — secrets never reach production', 'blocked', ?)`,
   ).run(
     id,
     projectId,
-    `Safety Agent detected a hardcoded ${secret.match(/sk-|pk-|api[_-]?key/i)?.[0] ?? "credential"} in the generated code`,
+    `Safety Agent detected a hardcoded ${humanLabel} in the generated code`,
     Date.now(),
   );
   if (prId) {
@@ -414,13 +464,57 @@ export function recordSecretBlock(projectId: string, prId: string | null, secret
       `UPDATE pull_requests SET status = 'blocked' WHERE id = ?`,
     ).run(prId);
   }
+  // M4: surface the block in the bell too (not just recovery_events).
+  const wsId = workspaceOfProject(projectId);
+  if (wsId) {
+    createNotification({
+      workspaceId: wsId,
+      projectId,
+      kind: "secret_blocked",
+      title: `Safety Agent blocked a ${humanLabel}`,
+      body: `Detected "${secret.slice(0, 40)}${secret.length > 40 ? "…" : ""}" in agent output. Use environment variables instead.`,
+      link: "/app/failures",
+    });
+  }
+}
+
+function labelForSecret(secret: string): string {
+  if (/^sk-ant/i.test(secret)) return "Anthropic API key";
+  if (/^sk-(?:proj|org)/i.test(secret)) return "OpenAI project key";
+  if (/^sk_(?:live|test)/i.test(secret)) return "Stripe secret key";
+  if (/^pk_(?:live|test)/i.test(secret)) return "Stripe publishable key";
+  if (/^AIza/i.test(secret)) return "Google API key";
+  if (/^ghp_/i.test(secret)) return "GitHub personal access token";
+  if (/^xox[abp]-/i.test(secret)) return "Slack token";
+  if (/^AKIA|^ASIA/i.test(secret)) return "AWS access key";
+  if (/^eyJ/.test(secret)) return "JWT token";
+  if (/sk-|pk-|api[_-]?key/i.test(secret)) return "API key";
+  return "credential";
 }
 
 const SECRET_PATTERNS = [
+  // Generic "sk|pk|api_key|secret|token" + 6+ alphanum
   /(?:sk|pk|api[_-]?key|secret|token)[_-][a-zA-Z0-9]{6,}/i,
-  /AIza[0-9A-Za-z\\-_]{35}/,
+  // OpenAI project-style keys: sk-proj-… (20+ alphanum)
+  /sk-(?:proj-|ant-|test-|live-|org-)[A-Za-z0-9_\-]{16,}/i,
+  // Anthropic API keys: sk-ant-api03-…
+  /sk-ant-api03-[A-Za-z0-9_\-]{20,}/i,
+  // Stripe live + test keys
+  /sk_(?:live|test)_[A-Za-z0-9]{16,}/i,
+  /pk_(?:live|test)_[A-Za-z0-9]{16,}/i,
+  /rk_(?:live|test)_[A-Za-z0-9]{16,}/i,
+  // AWS access key id (AKIA / ASIA prefix + 16 uppercase)
+  /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/,
+  // Google API key
+  /AIza[0-9A-Za-z\-_]{35}/,
+  // GitHub personal access token
   /ghp_[a-zA-Z0-9]{36}/,
+  // Slack tokens
   /xox[abp]-[a-zA-Z0-9-]+/,
+  // JWT (header.payload.signature, base64url)
+  /\beyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\b/,
+  // PEM private key block
+  /-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/,
 ];
 
 export function detectSecret(text: string): string | null {
@@ -474,11 +568,34 @@ export function detectDangerousAction(text: string): DangerousActionHit | null {
   return null;
 }
 
+// Lightweight profanity guard. We don't try to be exhaustive — just block the
+// handful of common English expletives that would otherwise be persisted as
+// task titles in the demo. False positives (e.g. technical terms) are
+// acceptable since the user can rephrase.
+const PROFANITY_WORDS = [
+  "fuck", "shit", "bitch", "asshole", "bastard", "dick", "piss", "cunt",
+];
+export function detectProfanity(text: string): string | null {
+  const lc = text.toLowerCase();
+  for (const w of PROFANITY_WORDS) {
+    // Word boundary on the left, but allow common suffixes (ing, ed, s, er, etc.)
+    // so "fucking" still trips on the root "fuck". The right boundary alone is
+    // not enough — "ass" should not match "class".
+    const re = new RegExp(`\\b${w}[a-z]*\\b`, "i");
+    if (re.test(lc)) return w;
+  }
+  return null;
+}
+
 /** Convenience: combined guardrail check used by /api/chat. */
 export function detectGuardrailViolation(text: string): { kind: string; title: string; match: string } | null {
   const secret = detectSecret(text);
   if (secret) return { kind: "secret", title: "Hardcoded credential", match: secret };
-  return detectDangerousAction(text);
+  const danger = detectDangerousAction(text);
+  if (danger) return danger;
+  const profanity = detectProfanity(text);
+  if (profanity) return { kind: "profanity", title: "Inappropriate language", match: profanity };
+  return null;
 }
 
 export function listRecoveryEvents(projectId: string): RecoveryEvent[] {
@@ -532,6 +649,10 @@ export function decideApproval(
       db.prepare(
         `UPDATE pull_requests SET status = 'rejected' WHERE id = ?`,
       ).run(approval.pr_id);
+      // M1: rejection must unstick the task so the user can retry it.
+      db.prepare(
+        `UPDATE tasks SET status = 'backlog' WHERE linked_pr_id = ?`,
+      ).run(approval.pr_id);
     }
     pr = db.prepare("SELECT * FROM pull_requests WHERE id = ?").get(approval.pr_id) as PullRequest;
     const wsId = workspaceOfProject(approval.project_id);
@@ -539,7 +660,7 @@ export function decideApproval(
       createNotification({
         workspaceId: wsId,
         projectId: approval.project_id,
-        kind: decision === "approve" ? "pr_approved" : "pr_rolled_back",
+        kind: decision === "approve" ? "pr_approved" : "pr_rejected",
         title: decision === "approve" ? `PR #${pr.number} approved by ${approverName}` : `PR #${pr.number} rejected by ${approverName}`,
         body: pr.title,
         link: "/app/changes",

@@ -19,6 +19,7 @@ import { Route as AppSuggestedAppsRouteImport } from './routes/app.suggested-app
 import { Route as AppSettingsRouteImport } from './routes/app.settings'
 import { Route as AppReportRouteImport } from './routes/app.report'
 import { Route as AppPreviewRouteImport } from './routes/app.preview'
+import { Route as AppNotificationsRouteImport } from './routes/app.notifications'
 import { Route as AppIntakeRouteImport } from './routes/app.intake'
 import { Route as AppFailuresRouteImport } from './routes/app.failures'
 import { Route as AppDiscoveriesRouteImport } from './routes/app.discoveries'
@@ -78,6 +79,11 @@ const AppReportRoute = AppReportRouteImport.update({
 const AppPreviewRoute = AppPreviewRouteImport.update({
   id: '/preview',
   path: '/preview',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppNotificationsRoute = AppNotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
   getParentRoute: () => AppRoute,
 } as any)
 const AppIntakeRoute = AppIntakeRouteImport.update({
@@ -144,6 +150,7 @@ export interface FileRoutesByFullPath {
   '/app/discoveries': typeof AppDiscoveriesRoute
   '/app/failures': typeof AppFailuresRoute
   '/app/intake': typeof AppIntakeRoute
+  '/app/notifications': typeof AppNotificationsRoute
   '/app/preview': typeof AppPreviewRoute
   '/app/report': typeof AppReportRoute
   '/app/settings': typeof AppSettingsRoute
@@ -165,6 +172,7 @@ export interface FileRoutesByTo {
   '/app/discoveries': typeof AppDiscoveriesRoute
   '/app/failures': typeof AppFailuresRoute
   '/app/intake': typeof AppIntakeRoute
+  '/app/notifications': typeof AppNotificationsRoute
   '/app/preview': typeof AppPreviewRoute
   '/app/report': typeof AppReportRoute
   '/app/settings': typeof AppSettingsRoute
@@ -188,6 +196,7 @@ export interface FileRoutesById {
   '/app/discoveries': typeof AppDiscoveriesRoute
   '/app/failures': typeof AppFailuresRoute
   '/app/intake': typeof AppIntakeRoute
+  '/app/notifications': typeof AppNotificationsRoute
   '/app/preview': typeof AppPreviewRoute
   '/app/report': typeof AppReportRoute
   '/app/settings': typeof AppSettingsRoute
@@ -212,6 +221,7 @@ export interface FileRouteTypes {
     | '/app/discoveries'
     | '/app/failures'
     | '/app/intake'
+    | '/app/notifications'
     | '/app/preview'
     | '/app/report'
     | '/app/settings'
@@ -233,6 +243,7 @@ export interface FileRouteTypes {
     | '/app/discoveries'
     | '/app/failures'
     | '/app/intake'
+    | '/app/notifications'
     | '/app/preview'
     | '/app/report'
     | '/app/settings'
@@ -255,6 +266,7 @@ export interface FileRouteTypes {
     | '/app/discoveries'
     | '/app/failures'
     | '/app/intake'
+    | '/app/notifications'
     | '/app/preview'
     | '/app/report'
     | '/app/settings'
@@ -341,6 +353,13 @@ declare module '@tanstack/react-router' {
       path: '/preview'
       fullPath: '/app/preview'
       preLoaderRoute: typeof AppPreviewRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/notifications': {
+      id: '/app/notifications'
+      path: '/notifications'
+      fullPath: '/app/notifications'
+      preLoaderRoute: typeof AppNotificationsRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/intake': {
@@ -438,6 +457,7 @@ interface AppRouteChildren {
   AppDiscoveriesRoute: typeof AppDiscoveriesRoute
   AppFailuresRoute: typeof AppFailuresRoute
   AppIntakeRoute: typeof AppIntakeRoute
+  AppNotificationsRoute: typeof AppNotificationsRoute
   AppPreviewRoute: typeof AppPreviewRoute
   AppReportRoute: typeof AppReportRoute
   AppSettingsRoute: typeof AppSettingsRoute
@@ -457,6 +477,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppDiscoveriesRoute: AppDiscoveriesRoute,
   AppFailuresRoute: AppFailuresRoute,
   AppIntakeRoute: AppIntakeRoute,
+  AppNotificationsRoute: AppNotificationsRoute,
   AppPreviewRoute: AppPreviewRoute,
   AppReportRoute: AppReportRoute,
   AppSettingsRoute: AppSettingsRoute,

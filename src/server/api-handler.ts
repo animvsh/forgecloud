@@ -103,6 +103,16 @@ function sendError(
 async function getCurrentProjectId(): Promise<string> {
   ensureSeed();
   const d = getDb();
+  // Honor the workspace's active-project preference if it points at a real project.
+  const pref = d
+    .prepare("SELECT value FROM workspace_prefs WHERE workspace_id = ? AND key = 'activeProjectId'")
+    .get(ids.workspace) as { value: string } | undefined;
+  if (pref?.value) {
+    const row = d.prepare("SELECT id FROM projects WHERE id = ?").get(pref.value) as
+      | { id: string }
+      | undefined;
+    if (row) return row.id;
+  }
   const demo = d.prepare("SELECT * FROM projects WHERE id = ?").get(ids.demoProject) as
     | Project
     | undefined;
@@ -365,10 +375,9 @@ async function handleChat(
 
   const d = getDb();
   const projectId = await getCurrentProjectId();
-  d.prepare(
-    `INSERT INTO chat_messages (id, project_id, role, content) VALUES (?, ?, 'user', ?)`,
-  ).run(ids.newMessage(), projectId, message);
 
+  // Guardrail check FIRST: do not persist the message if it would be blocked
+  // (the PRD's "Safety Agent caught the secret before it ever hit code").
   const hit = detectGuardrailViolation(message);
   if (hit) {
     // Map the broader guardrail rules onto the existing recovery_events model.
@@ -399,7 +408,9 @@ async function handleChat(
     const reply =
       hit.kind === "secret"
         ? "Safety Agent blocked this — looks like a hardcoded credential in your message. Use environment variables instead."
-        : `Safety Agent blocked this — it looked like: ${hit.title}. Rewrite your request without that pattern.`;
+        : hit.kind === "profanity"
+          ? "Let's keep the request professional — rephrase that without the strong language and I'll get to work."
+          : `Safety Agent blocked this — it looked like: ${hit.title}. Rewrite your request without that pattern.`;
     d.prepare(
       `INSERT INTO chat_messages (id, project_id, role, content, metadata) VALUES (?, ?, 'assistant', ?, ?)`,
     ).run(
@@ -410,6 +421,11 @@ async function handleChat(
     );
     return sendJson(res, 200, { reply, blocked: true, rule: hit }, requestId);
   }
+
+  // Persist the user message only after guardrail passes.
+  d.prepare(
+    `INSERT INTO chat_messages (id, project_id, role, content) VALUES (?, ?, 'user', ?)`,
+  ).run(ids.newMessage(), projectId, message);
 
   const project = getProject(projectId)!;
   if (project.status === "intake") {
@@ -474,8 +490,18 @@ async function handleRunTask(
     return sendError(res, 400, "Invalid run-task payload", requestId, {
       issues: parsed.error.issues,
     });
-  const result = await runAgentOnTask(parsed.data.taskId, parsed.data.failureType);
-  sendJson(res, 200, result, requestId);
+  // Pre-check so bogus IDs return 404, not 500.
+  const d = getDb();
+  const exists = d.prepare("SELECT id FROM tasks WHERE id = ?").get(parsed.data.taskId) as
+    | { id: string }
+    | undefined;
+  if (!exists) return sendError(res, 404, `Task ${parsed.data.taskId} not found`, requestId);
+  try {
+    const result = await runAgentOnTask(parsed.data.taskId, parsed.data.failureType);
+    sendJson(res, 200, result, requestId);
+  } catch (err) {
+    sendError(res, 500, (err as Error).message ?? "Internal error", requestId);
+  }
 }
 
 const RunAllSchema = z.object({
@@ -577,6 +603,14 @@ async function handleSkipToDemo(
     d.prepare(`DELETE FROM notifications WHERE project_id = ?`).run(pid);
     d.prepare(`DELETE FROM projects WHERE id = ?`).run(pid);
   }
+  // M5: wipe the canonical demo project's notifications + activity so the bell
+  // shows just the freshly-seeded notif-* rows.
+  d.prepare(`DELETE FROM notifications WHERE project_id = ?`).run(DEMO_PROJECT_ID);
+  // Clear any active-project preference so the demo becomes the current project again.
+  d.prepare(
+    `DELETE FROM workspace_prefs WHERE workspace_id = ? AND key = 'activeProjectId'`,
+  ).run(ids.workspace);
+
   // Re-seed the canonical demo project to a known good state. This restores
   // its PRD-canonical name + fresh tasks/PRs/agents so the rest of the app
   // (Tasks, Agents, PRs, Preview) shows the same content the demo screenshot
@@ -695,6 +729,12 @@ async function handleApproval(
     return sendError(res, 400, "Invalid approval payload", requestId, {
       issues: parsed.error.issues,
     });
+  const d = getDb();
+  const existing = d.prepare("SELECT id, status FROM approvals WHERE id = ?").get(parsed.data.approvalId) as { id: string; status: string } | undefined;
+  if (!existing) return sendError(res, 404, "Approval not found", requestId);
+  if (existing.status !== "pending") {
+    return sendError(res, 400, `Approval already ${existing.status}`, requestId);
+  }
   const result = decideApproval(
     parsed.data.approvalId,
     parsed.data.decision,
@@ -718,6 +758,11 @@ async function handleApprovePr(
     return sendError(res, 400, "Invalid approve-pr payload", requestId, {
       issues: parsed.error.issues,
     });
+  const d = getDb();
+  const exists = d.prepare("SELECT id FROM pull_requests WHERE id = ?").get(parsed.data.prId) as
+    | { id: string }
+    | undefined;
+  if (!exists) return sendError(res, 404, "PR not found", requestId);
   approvePr(parsed.data.prId, parsed.data.approverName ?? "Animesh");
   sendJson(res, 200, { ok: true }, requestId);
 }
@@ -736,9 +781,15 @@ async function handleRollbackPr(
     });
   const d = getDb();
   const pr = d.prepare("SELECT * FROM pull_requests WHERE id = ?").get(parsed.data.prId) as
-    | { id: string; project_id: string; task_id: string | null; title: string; number: number }
+    | { id: string; project_id: string; task_id: string | null; title: string; number: number; status: string; merged_at: number | null }
     | undefined;
   if (!pr) return sendError(res, 404, "PR not found", requestId);
+  if (!pr.merged_at) {
+    return sendError(res, 400, "PR has not been merged — nothing to roll back", requestId);
+  }
+  if (pr.status === "rolled_back") {
+    return sendError(res, 400, "PR is already rolled back", requestId);
+  }
 
   d.prepare(`UPDATE pull_requests SET status = 'rolled_back' WHERE id = ?`).run(pr.id);
   if (pr.task_id) {
@@ -1166,6 +1217,11 @@ const NotifReadSchema = z.object({ notificationId: z.string().min(1) });
 async function handleMarkNotifRead(req: IncomingMessage, res: ServerResponse, requestId: string) {
   const parsed = NotifReadSchema.safeParse(await readJsonBody(req));
   if (!parsed.success) return sendError(res, 400, "Invalid payload", requestId, { issues: parsed.error.issues });
+  const d = getDb();
+  const exists = d
+    .prepare("SELECT id FROM notifications WHERE id = ?")
+    .get(parsed.data.notificationId) as { id: string } | undefined;
+  if (!exists) return sendError(res, 404, "Notification not found", requestId);
   markNotificationRead(parsed.data.notificationId);
   sendJson(res, 200, { ok: true, unread: unreadCount(ids.workspace) }, requestId);
 }
@@ -1182,7 +1238,13 @@ async function handleListBranches(_req: IncomingMessage, res: ServerResponse, re
 async function handleListCommits(req: IncomingMessage, res: ServerResponse, requestId: string) {
   const url = new URL(req.url ?? "/", "http://localhost");
   const branchId = url.searchParams.get("branchId") ?? undefined;
+  if (!branchId) return sendError(res, 400, "branchId is required", requestId);
   const projectId = await getCurrentProjectId();
+  const d = getDb();
+  const exists = d.prepare("SELECT id FROM branches WHERE id = ?").get(branchId) as
+    | { id: string }
+    | undefined;
+  if (!exists) return sendError(res, 404, "Branch not found", requestId);
   sendJson(res, 200, listCommits(projectId, branchId), requestId);
 }
 const MergeSchema = z.object({ branchId: z.string().min(1) });
@@ -1219,6 +1281,7 @@ async function handleArchiveBranch(req: IncomingMessage, res: ServerResponse, re
   const parsed = MergeSchema.safeParse(await readJsonBody(req));
   if (!parsed.success) return sendError(res, 400, "Invalid payload", requestId, { issues: parsed.error.issues });
   const branch = archiveBranch(parsed.data.branchId);
+  if (!branch) return sendError(res, 404, "Branch not found", requestId);
   sendJson(res, 200, { ok: true, branch }, requestId);
 }
 async function handleListWorktrees(_req: IncomingMessage, res: ServerResponse, requestId: string) {
@@ -1270,9 +1333,13 @@ async function handleDisconnectTool(req: IncomingMessage, res: ServerResponse, r
   const parsed = ConnectSchema.safeParse(await readJsonBody(req));
   if (!parsed.success) return sendError(res, 400, "Invalid payload", requestId, { issues: parsed.error.issues });
   const d = getDb();
+  const row = d
+    .prepare("SELECT id FROM connections WHERE workspace_id = ? AND provider = ?")
+    .get(ids.workspace, parsed.data.provider) as { id: string } | undefined;
+  if (!row) return sendError(res, 404, "Connector not found", requestId);
   d.prepare(
-    "UPDATE connections SET status = 'available', account_label = NULL, connected_at = NULL WHERE workspace_id = ? AND provider = ?",
-  ).run(ids.workspace, parsed.data.provider);
+    "UPDATE connections SET status = 'available', account_label = NULL, connected_at = NULL WHERE id = ?",
+  ).run(row.id);
   sendJson(res, 200, { ok: true }, requestId);
 }
 async function handleScanConnections(_req: IncomingMessage, res: ServerResponse, requestId: string) {
@@ -1456,6 +1523,43 @@ async function handleNewProject(req: IncomingMessage, res: ServerResponse, reque
   });
   sendJson(res, 200, { ok: true, project: getProject(id) }, requestId);
 }
+async function handleListProjects(_req: IncomingMessage, res: ServerResponse, requestId: string) {
+  const d = getDb();
+  const rows = d
+    .prepare(
+      `SELECT id, name, description, status, created_at FROM projects WHERE workspace_id = ? ORDER BY created_at ASC`,
+    )
+    .all(ids.workspace);
+  const activeId = (d
+    .prepare("SELECT value FROM workspace_prefs WHERE workspace_id = ? AND key = 'activeProjectId'")
+    .get(ids.workspace) as { value: string } | undefined)?.value ?? null;
+  sendJson(res, 200, { projects: rows, activeProjectId: activeId }, requestId);
+}
+const SwitchProjectSchema = z.object({ projectId: z.string().min(1) });
+async function handleSwitchProject(req: IncomingMessage, res: ServerResponse, requestId: string) {
+  const parsed = SwitchProjectSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid payload", requestId, { issues: parsed.error.issues });
+  const d = getDb();
+  const exists = d
+    .prepare("SELECT id, name FROM projects WHERE id = ? AND workspace_id = ?")
+    .get(parsed.data.projectId, ids.workspace) as { id: string; name: string } | undefined;
+  if (!exists) return sendError(res, 404, "Project not found", requestId);
+  d.prepare(
+    `INSERT INTO workspace_prefs (workspace_id, key, value, updated_at) VALUES (?, 'activeProjectId', ?, ?)
+     ON CONFLICT(workspace_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  ).run(ids.workspace, parsed.data.projectId, Date.now());
+  sendJson(res, 200, { ok: true, projectId: exists.id, projectName: exists.name }, requestId);
+}
+async function handleListDiscoveries(_req: IncomingMessage, res: ServerResponse, requestId: string) {
+  const d = getDb();
+  const projectId = await getCurrentProjectId();
+  const rows = d
+    .prepare(
+      `SELECT * FROM discoveries WHERE workspace_id = ? AND (project_id IS NULL OR project_id = ?) ORDER BY created_at ASC`,
+    )
+    .all(ids.workspace, projectId);
+  sendJson(res, 200, { discoveries: rows }, requestId);
+}
 
 // ---------- router ----------------------------------------------------------
 
@@ -1604,7 +1708,11 @@ const ROUTES: Array<{
   // Plain-English Blame
   { method: "POST", pattern: /^\/api\/blame$/, handler: handleBlame, rate: RATE_CONFIGS.expensive },
   // Multi-project
+  { method: "GET", pattern: /^\/api\/projects$/, handler: handleListProjects, rate: RATE_CONFIGS.cheap },
   { method: "POST", pattern: /^\/api\/projects$/, handler: handleNewProject, rate: RATE_CONFIGS.cheap },
+  { method: "POST", pattern: /^\/api\/projects\/switch$/, handler: handleSwitchProject, rate: RATE_CONFIGS.cheap },
+  // Discoveries
+  { method: "GET", pattern: /^\/api\/discoveries$/, handler: handleListDiscoveries, rate: RATE_CONFIGS.cheap },
 ];
 
 export async function handleApiRequest(

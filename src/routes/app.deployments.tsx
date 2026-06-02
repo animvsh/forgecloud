@@ -86,8 +86,9 @@ function DeploymentsScreen() {
             </button>
             <button
               onClick={() => doDeploy("production")}
-              disabled={busy !== null}
-              className="inline-flex items-center gap-1.5 rounded-full bg-foreground px-3 py-1.5 text-xs text-background hover:opacity-90 disabled:opacity-40"
+              disabled={busy !== null || pendingApprovals > 0}
+              title={pendingApprovals > 0 ? `Resolve ${pendingApprovals} pending approval${pendingApprovals === 1 ? "" : "s"} first` : undefined}
+              className="inline-flex items-center gap-1.5 rounded-full bg-foreground px-3 py-1.5 text-xs text-background hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {busy === "production" ? <Loader2 className="size-3 animate-spin" /> : <Rocket className="size-3" />}
               Deploy production

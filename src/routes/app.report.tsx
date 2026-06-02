@@ -35,7 +35,9 @@ function ReportScreen() {
   const done = tasks.filter((t) => t.status === "done");
   const review = tasks.filter((t) => t.status === "review");
   const building = tasks.filter((t) => t.status === "building");
-  const agents = data.agents;
+  // MAJOR #7: filter by current project so we don't count agents from other workspace projects.
+  const project = data.project;
+  const agents = data.agents.filter((a: { project_id: string }) => a.project_id === project?.id);
   const prs = data.prs;
   const recovery = data.recovery;
   const deployments = data.deployments;

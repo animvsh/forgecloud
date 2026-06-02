@@ -94,7 +94,7 @@ function AgentCard({
   tasks,
 }: {
   agent: Agent;
-  tasks: { title: string; status: string; id: string }[];
+  tasks: { title: string; status: string; id: string; assigned_agent_id?: string | null }[];
 }) {
   const safeTasks = tasks ?? [];
   const currentTask = safeTasks.find((t) => t.id === agent.current_task_id);

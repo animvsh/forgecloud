@@ -217,11 +217,9 @@ export function seedDemoProject() {
         ? "Building: Profit estimate card"
         : type === "design"
           ? "Polishing: Slow-hours chart"
-          : type === "data"
-            ? "Calculated slow hours from 90 days of sales"
-            : type === "safety"
+          : type === "safety"
               ? "Blocked '50% off all pizzas' — discount above safe margin"
-              : type === "qa"
+            : type === "qa"
                 ? "Approved PR #3 (closing checklist)"
                 : `Shipped: PR #1 (Pizza Ops Dashboard v1)`;
     insertAgent.run(
@@ -278,7 +276,7 @@ export function seedDemoProject() {
   }
 
   // PRs — five PRs per spec.
-  const prs: Array<[string, string | null, number, string, string, string, string, string, number, number, string | null, number]> = [
+  const prs: Array<[string, string | null, number, string, string, string, string, string | null, number, number, string | null, number]> = [
     ["pr-1", "task-1", 1, "Create Pizza Ops Dashboard v1", "First version of the internal dashboard: sales, customers, staff tasks, promo builder, and login.", "approved", "med", "Sal", 8, now - 1000 * 60 * 60 * 24 * 2 + 1000 * 60 * 45, "https://preview-1.forgecloud.dev", 1],
     ["pr-2", "task-5", 2, "Add Profit Impact to Promos", "Promo Builder now estimates revenue, discount cost, and expected net before the owner approves a campaign.", "open", "med", null, 4, now - 1000 * 60 * 60 * 6, "https://preview-2.forgecloud.dev", 1],
     ["pr-3", "task-7", 3, "Add Closing Checklist", "Nightly checklist staff mark complete; tasks reset each morning and the owner sees who did what.", "open", "low", null, 3, now - 1000 * 60 * 60 * 2, "https://preview-3.forgecloud.dev", 0],

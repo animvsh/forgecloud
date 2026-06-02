@@ -48,6 +48,15 @@ function initSchema(db: Database.Database) {
       FOREIGN KEY (owner_id) REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS workspace_prefs (
+      workspace_id TEXT NOT NULL,
+      key TEXT NOT NULL,
+      value TEXT,
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+      PRIMARY KEY (workspace_id, key),
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
+    );
+
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
       workspace_id TEXT NOT NULL,

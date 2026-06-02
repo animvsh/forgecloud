@@ -140,6 +140,7 @@ export type NotificationKind =
   | "task_done"
   | "pr_opened"
   | "pr_approved"
+  | "pr_rejected"
   | "pr_rolled_back"
   | "approval_needed"
   | "secret_blocked"

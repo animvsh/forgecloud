@@ -13,6 +13,7 @@ import {
   MessageCircle,
   Sparkles,
   ShieldCheck,
+  X,
 } from "lucide-react";
 import { useMarkNotificationRead, useMarkAllNotificationsRead } from "@/lib/client";
 
@@ -29,6 +30,7 @@ type Notification = {
 const KIND_ICONS: Record<string, typeof Bell> = {
   pr_opened: GitPullRequest,
   pr_approved: Check,
+  pr_rejected: X,
   pr_rolled_back: Undo2,
   approval_needed: AlertTriangle,
   secret_blocked: ShieldAlert,

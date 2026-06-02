@@ -48,7 +48,9 @@ function ProjectHome() {
   const review = tasks.filter((t) => t.status === "review").length;
   const total = tasks.length;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-  const agents = data.agents;
+  // MAJOR #7: filter agents by current project.
+  const project = data.project;
+  const agents = data.agents.filter((a: { project_id: string }) => a.project_id === project?.id);
   const prs = data.prs;
   const recovery = data.recovery;
   const deployments = data.deployments;

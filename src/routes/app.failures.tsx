@@ -17,6 +17,7 @@ const ICONS: Record<string, typeof AlertTriangle> = {
   bad_output: AlertOctagon,
   rate_limit: RefreshCcw,
   agent_conflict: Undo2,
+  manual_rollback: Undo2,
 };
 
 const COLORS: Record<string, string> = {
@@ -28,6 +29,7 @@ const COLORS: Record<string, string> = {
   bad_output: "var(--amber)",
   rate_limit: "var(--amber)",
   agent_conflict: "var(--coral)",
+  manual_rollback: "var(--coral)",
 };
 
 function FailuresScreen() {
@@ -92,7 +94,7 @@ function FailuresScreen() {
             ].map((f) => (
               <button
                 key={f.type}
-                onClick={() => injectFailure(f.type as Parameters<typeof inject.mutate>[0])}
+                onClick={() => injectFailure({ type: f.type })}
                 disabled={busy !== null}
                 className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-40"
               >

@@ -157,6 +157,14 @@ export function useSkipToDemo() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }
+export function useSwitchProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { projectId: string }) =>
+      apiPost<{ ok: true; projectId: string; projectName: string }>("/api/projects/switch", vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
 
 export function useAddComment() {
   const qc = useQueryClient();
@@ -208,6 +216,25 @@ export function useRequestEdits() {
     mutationFn: (vars: { prId: string; message: string }) =>
       apiPost<{ ok: true; task: any }>("/api/request-edits", vars),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
+
+type ForgeNotification = {
+  id: string;
+  kind: string;
+  title: string;
+  body?: string | null;
+  link?: string | null;
+  read_at?: string | null;
+  created_at: string;
+};
+
+export function useNotifications() {
+  return useQuery({
+    queryKey: ["notifications-page"],
+    queryFn: () =>
+      apiGet<{ notifications: ForgeNotification[]; unread: number }>("/api/notifications"),
+    refetchInterval: 5000,
   });
 }
 

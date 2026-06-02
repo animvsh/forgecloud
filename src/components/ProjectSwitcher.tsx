@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { ChevronDown, Plus, Check, Loader2, Folder } from "lucide-react";
-import { useForgeState, useNewProject } from "@/lib/client";
+import { useForgeState, useNewProject, useSwitchProject } from "@/lib/client";
 import { toast } from "sonner";
 
 type ProjectRow = {
@@ -14,8 +14,10 @@ type ProjectRow = {
 export function ProjectSwitcher() {
   const { data } = useForgeState();
   const newProject = useNewProject();
+  const switchProject = useSwitchProject();
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [switching, setSwitching] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -49,6 +51,19 @@ export function ProjectSwitcher() {
     }
   }
 
+  async function handleSwitch(projectId: string, projectName: string) {
+    setSwitching(projectId);
+    try {
+      await switchProject.mutateAsync({ projectId });
+      toast.success(`Switched to "${projectName}"`);
+      setOpen(false);
+    } catch (err) {
+      toast.error(`Could not switch: ${(err as Error).message}`);
+    } finally {
+      setSwitching(null);
+    }
+  }
+
   return (
     <div ref={ref} className="relative shrink-0">
       <button
@@ -77,12 +92,13 @@ export function ProjectSwitcher() {
                 <button
                   key={p.id}
                   type="button"
+                  disabled={switching === p.id}
                   onClick={() => {
-                    setOpen(false);
                     if (active) {
+                      setOpen(false);
                       toast.info(`"${p.name}" is the active project.`);
                     } else {
-                      toast.info(`This demo runs on a single project. "${p.name}" is read-only — call /api/reset to clear extras.`);
+                      handleSwitch(p.id, p.name);
                     }
                   }}
                   className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors flex items-center gap-2 ${active ? "bg-muted/60" : ""}`}
@@ -93,7 +109,11 @@ export function ProjectSwitcher() {
                       <span className="ml-1 text-xs text-muted-foreground">— {p.description.slice(0, 40)}</span>
                     )}
                   </span>
-                  {active && <Check className="size-3 text-brand shrink-0" />}
+                  {switching === p.id ? (
+                    <Loader2 className="size-3 animate-spin text-muted-foreground shrink-0" />
+                  ) : active ? (
+                    <Check className="size-3 text-brand shrink-0" />
+                  ) : null}
                 </button>
               );
             })}

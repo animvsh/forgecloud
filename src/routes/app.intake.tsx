@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { ArrowRight, ArrowLeft, Sparkles, Loader2, Zap } from "lucide-react";
+import { ArrowRight, ArrowLeft, Sparkles, Loader2, Zap, Plus, X } from "lucide-react";
 import { useStartIntake, useForgeState, useSkipToDemo } from "@/lib/client";
 
 export const Route = createFileRoute("/app/intake")({
@@ -13,6 +13,7 @@ const STEPS = [
   { key: "userType", label: "Who will use it?", placeholder: "Sales team", defaultValue: "My five-person sales team" },
   { key: "firstVersion", label: "What should v1 do first?", placeholder: "Track leads, notes, and follow-ups", defaultValue: "Lead dashboard, add lead form, notes per lead, follow-up date, basic login" },
   { key: "style", label: "What design style?", placeholder: "Clean, modern, like Notion", defaultValue: "Clean, modern, Notion-like" },
+  { key: "reviewers", label: "Who reviews before merge?", placeholder: "Type a name and press Enter", defaultValue: "" },
 ] as const;
 
 function IntakeScreen() {
@@ -21,12 +22,13 @@ function IntakeScreen() {
   const intake = useStartIntake();
   const skip = useSkipToDemo();
   const [step, setStep] = useState(0);
-  const [projectName, setProjectName] = useState(STEPS[0].defaultValue);
-  const [userType, setUserType] = useState(STEPS[1].defaultValue);
-  const [firstVersion, setFirstVersion] = useState(STEPS[2].defaultValue);
+  const [projectName, setProjectName] = useState<string>(STEPS[0].defaultValue);
+  const [userType, setUserType] = useState<string>(STEPS[1].defaultValue);
+  const [firstVersion, setFirstVersion] = useState<string>(STEPS[2].defaultValue);
   const [needsLogin, setNeedsLogin] = useState(true);
-  const [style, setStyle] = useState(STEPS[3].defaultValue);
+  const [style, setStyle] = useState<string>(STEPS[3].defaultValue);
   const [reviewers, setReviewers] = useState<string[]>(["Animesh"]);
+  const [newReviewer, setNewReviewer] = useState("");
 
   const values: Record<string, string> = { projectName, userType, firstVersion, style };
   const setters: Record<string, (v: string) => void> = {
@@ -36,8 +38,8 @@ function IntakeScreen() {
     style: setStyle,
   };
   const currentStep = STEPS[step];
-  const currentValue = values[currentStep.key];
-  const canAdvance = currentValue.trim().length > 1;
+  const currentValue = currentStep.key === "reviewers" ? "" : values[currentStep.key];
+  const canAdvance = currentStep.key === "reviewers" ? reviewers.length > 0 : currentValue.trim().length > 1;
 
   const isLast = step === STEPS.length - 1;
 
@@ -87,21 +89,81 @@ function IntakeScreen() {
             One short answer is fine. The Product Agent will turn this into a build plan.
           </p>
           <div className="mt-6">
-            <textarea
-              value={currentValue}
-              onChange={(e) => setters[currentStep.key](e.target.value)}
-              placeholder={currentStep.placeholder}
-              className="w-full rounded-2xl border border-border bg-background px-5 py-4 text-lg outline-none focus:border-brand"
-              rows={3}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey && canAdvance) {
-                  e.preventDefault();
-                  if (isLast) submit();
-                  else setStep(step + 1);
-                }
-              }}
-            />
-            {currentValue === currentStep.defaultValue && (
+            {currentStep.key === "reviewers" ? (
+              <div className="rounded-2xl border border-border bg-background p-4">
+                <div className="flex flex-wrap gap-2">
+                  {reviewers.map((r) => (
+                    <span
+                      key={r}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-brand/15 px-3 py-1 text-sm font-medium text-brand"
+                    >
+                      {r}
+                      {r !== "Animesh" && (
+                        <button
+                          type="button"
+                          onClick={() => setReviewers(reviewers.filter((x) => x !== r))}
+                          className="inline-flex size-4 items-center justify-center rounded-full hover:bg-brand/20"
+                          aria-label={`Remove ${r}`}
+                        >
+                          <X className="size-3" />
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-3 flex items-center gap-2">
+                  <input
+                    value={newReviewer}
+                    onChange={(e) => setNewReviewer(e.target.value)}
+                    placeholder={currentStep.placeholder}
+                    className="flex-1 rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-brand"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && newReviewer.trim()) {
+                        e.preventDefault();
+                        const name = newReviewer.trim();
+                        if (!reviewers.includes(name)) {
+                          setReviewers([...reviewers, name]);
+                        }
+                        setNewReviewer("");
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const name = newReviewer.trim();
+                      if (name && !reviewers.includes(name)) {
+                        setReviewers([...reviewers, name]);
+                        setNewReviewer("");
+                      }
+                    }}
+                    disabled={!newReviewer.trim()}
+                    className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-30"
+                  >
+                    <Plus className="size-3" /> Add
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Anyone whose eyes need to land on a change before it ships.
+                </p>
+              </div>
+            ) : (
+              <textarea
+                value={currentValue}
+                onChange={(e) => setters[currentStep.key](e.target.value)}
+                placeholder={currentStep.placeholder}
+                className="w-full rounded-2xl border border-border bg-background px-5 py-4 text-lg outline-none focus:border-brand"
+                rows={3}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey && canAdvance) {
+                    e.preventDefault();
+                    if (isLast) submit();
+                    else setStep(step + 1);
+                  }
+                }}
+              />
+            )}
+            {!["reviewers"].includes(currentStep.key) && currentValue === currentStep.defaultValue && (
               <p className="mt-2 text-xs text-muted-foreground">
                 Example pre-filled. Press Continue or edit it.
               </p>

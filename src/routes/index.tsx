@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { SiteNav } from "@/components/SiteNav";
 import { HeroDiagram } from "@/components/HeroDiagram";
-import { ArrowRight, Bot, GitBranch, Layout, Rocket, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowRight, Bot, GitBranch, Layout, Loader2, Rocket, ShieldCheck, Sparkles } from "lucide-react";
 import { useForgeState, useResetProject } from "@/lib/client";
 import { useState } from "react";
 
