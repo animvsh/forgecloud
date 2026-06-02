@@ -111,19 +111,26 @@ const AGENT_TYPE_MAP: Record<string, AgentType> = {
 export function createTasksFromPlan(
   projectId: string,
   plan: { features: PlanFeatureInput[] },
-  prReviewerName = "Animesh",
+  reviewerNames: string | string[] = "Animesh",
 ): Task[] {
   const db = getDb();
+  // Accept either a single name (back-compat) or an array; we round-robin
+  // across the array so multiple reviewers actually get used.
+  const reviewers = Array.isArray(reviewerNames)
+    ? reviewerNames.filter((r) => r && r.trim().length > 0)
+    : [reviewerNames];
+  const finalReviewers = reviewers.length > 0 ? reviewers : ["Animesh"];
   const insert = db.prepare(
     `INSERT INTO tasks (id, project_id, title, description, status, priority, risk_level,
       requester_id, requester_name, assigned_agent_id, reviewer_id, reviewer_name, created_at)
      VALUES (?, ?, ?, ?, 'backlog', 'med', ?, ?, ?, ?, ?, ?, ?)`,
   );
   const tasks: Task[] = [];
-  for (const f of plan.features) {
+  plan.features.forEach((f, idx) => {
     const agentType = AGENT_TYPE_MAP[f.ownerAgent] ?? "frontend";
     const agent = getAgentByType(projectId, agentType);
     const id = ids.newTask();
+    const prReviewerName = finalReviewers[idx % finalReviewers.length];
     insert.run(
       id,
       projectId,
@@ -138,7 +145,7 @@ export function createTasksFromPlan(
       Date.now(),
     );
     tasks.push(db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as Task);
-  }
+  });
   return tasks;
 }
 

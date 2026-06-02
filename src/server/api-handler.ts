@@ -73,20 +73,26 @@ function sendJson(res: ServerResponse, status: number, body: unknown, requestId?
   res.end(json);
 }
 
-function sendError(res: ServerResponse, status: number, message: string, requestId?: string, extra?: Record<string, unknown>): void {
+function sendError(
+  res: ServerResponse,
+  status: number,
+  message: string,
+  requestId?: string,
+  extra?: Record<string, unknown>,
+): void {
   sendJson(res, status, { error: message, ...(extra ?? {}) }, requestId);
 }
 
 async function getCurrentProjectId(): Promise<string> {
   ensureSeed();
   const d = getDb();
-  const demo = d
-    .prepare("SELECT * FROM projects WHERE id = ?")
-    .get(ids.demoProject) as Project | undefined;
+  const demo = d.prepare("SELECT * FROM projects WHERE id = ?").get(ids.demoProject) as
+    | Project
+    | undefined;
   if (demo) return demo.id;
-  const row = d
-    .prepare("SELECT * FROM projects ORDER BY created_at DESC LIMIT 1")
-    .get() as Project | undefined;
+  const row = d.prepare("SELECT * FROM projects ORDER BY created_at DESC LIMIT 1").get() as
+    | Project
+    | undefined;
   if (row) return row.id;
   const id = ids.newProject();
   d.prepare(
@@ -106,7 +112,13 @@ function computeRiskChecks(prId: string): {
 } {
   const d = getDb();
   const pr = d.prepare("SELECT * FROM pull_requests WHERE id = ?").get(prId) as
-    | { project_id: string; task_id: string | null; risk_level: string; requires_approval: number; status: string }
+    | {
+        project_id: string;
+        task_id: string | null;
+        risk_level: string;
+        requires_approval: number;
+        status: string;
+      }
     | undefined;
   if (!pr) return { build: "n/a", qa: "n/a", secretScan: "n/a", migration: "n/a" };
 
@@ -119,15 +131,16 @@ function computeRiskChecks(prId: string): {
   const approvedThisPr = pr.status === "approved";
 
   const task = pr.task_id
-    ? (d
-        .prepare("SELECT title, description FROM tasks WHERE id = ?")
-        .get(pr.task_id) as { title?: string; description?: string } | undefined)
+    ? (d.prepare("SELECT title, description FROM tasks WHERE id = ?").get(pr.task_id) as
+        | { title?: string; description?: string }
+        | undefined)
     : undefined;
   const taskText = `${task?.title ?? ""} ${task?.description ?? ""}`;
   // Strict DB-impact detection: needs a clear signal, not just the word "table".
-  const touchesDb = /database|schema migration|db migration|add(?:ing)? \w+ column|drop \w+ table|alter table|migration|rls policy/i.test(
-    taskText,
-  );
+  const touchesDb =
+    /database|schema migration|db migration|add(?:ing)? \w+ column|drop \w+ table|alter table|migration|rls policy/i.test(
+      taskText,
+    );
   const isHighRisk = pr.risk_level === "high" || touchesDb;
 
   return {
@@ -147,7 +160,11 @@ function computeRiskChecks(prId: string): {
 
 // ---------- route handlers ---------------------------------------------------
 
-async function handleGetHealth(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleGetHealth(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const d = getDb();
   let dbOk = false;
   try {
@@ -172,7 +189,11 @@ async function handleGetHealth(_req: IncomingMessage, res: ServerResponse, reque
   );
 }
 
-async function handleGetState(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleGetState(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   ensureSeed();
   const projectId = await getCurrentProjectId();
   const d = getDb();
@@ -242,9 +263,16 @@ const IntakeSchema = z.object({
   rawPrompt: z.string().max(2000).optional(),
 });
 
-async function handleIntake(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleIntake(
+  req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const parsed = IntakeSchema.safeParse(await readJsonBody(req));
-  if (!parsed.success) return sendError(res, 400, "Invalid intake payload", requestId, { issues: parsed.error.issues });
+  if (!parsed.success)
+    return sendError(res, 400, "Invalid intake payload", requestId, {
+      issues: parsed.error.issues,
+    });
   const data = parsed.data;
 
   ensureSeed();
@@ -257,9 +285,10 @@ async function handleIntake(req: IncomingMessage, res: ServerResponse, requestId
     projectId,
   );
   createAgentsForProject(projectId);
-  const prompt = data.rawPrompt ?? `Build a ${data.firstVersion} for ${data.userType}. Style: ${data.style}.`;
+  const prompt =
+    data.rawPrompt ?? `Build a ${data.firstVersion} for ${data.userType}. Style: ${data.style}.`;
   const plan: BuildPlan = await generateBuildPlan(prompt);
-  const tasks = createTasksFromPlan(projectId, plan, data.reviewers?.[0] ?? "Animesh");
+  const tasks = createTasksFromPlan(projectId, plan, data.reviewers ?? ["Animesh"]);
   d.prepare(
     `INSERT INTO chat_messages (id, project_id, role, content, metadata) VALUES (?, ?, 'assistant', ?, ?)`,
   ).run(
@@ -273,9 +302,14 @@ async function handleIntake(req: IncomingMessage, res: ServerResponse, requestId
 
 const ChatSchema = z.object({ message: z.string().min(1).max(4000) });
 
-async function handleChat(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleChat(
+  req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const parsed = ChatSchema.safeParse(await readJsonBody(req));
-  if (!parsed.success) return sendError(res, 400, "Invalid chat payload", requestId, { issues: parsed.error.issues });
+  if (!parsed.success)
+    return sendError(res, 400, "Invalid chat payload", requestId, { issues: parsed.error.issues });
   const { message } = parsed.data;
 
   const d = getDb();
@@ -348,9 +382,16 @@ const RunTaskSchema = z.object({
   failureType: z.string().min(1).optional(),
 });
 
-async function handleRunTask(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleRunTask(
+  req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const parsed = RunTaskSchema.safeParse(await readJsonBody(req));
-  if (!parsed.success) return sendError(res, 400, "Invalid run-task payload", requestId, { issues: parsed.error.issues });
+  if (!parsed.success)
+    return sendError(res, 400, "Invalid run-task payload", requestId, {
+      issues: parsed.error.issues,
+    });
   const result = await runAgentOnTask(parsed.data.taskId, parsed.data.failureType);
   sendJson(res, 200, result, requestId);
 }
@@ -360,9 +401,16 @@ const RunAllSchema = z.object({
   failureType: z.string().min(1).optional(),
 });
 
-async function handleRunAll(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleRunAll(
+  req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const parsed = RunAllSchema.safeParse(await readJsonBody(req));
-  if (!parsed.success) return sendError(res, 400, "Invalid run-all payload", requestId, { issues: parsed.error.issues });
+  if (!parsed.success)
+    return sendError(res, 400, "Invalid run-all payload", requestId, {
+      issues: parsed.error.issues,
+    });
   const { failureAt, failureType } = parsed.data;
   const projectId = await getCurrentProjectId();
   const d = getDb();
@@ -374,13 +422,17 @@ async function handleRunAll(req: IncomingMessage, res: ServerResponse, requestId
   const results = [];
   for (let i = 0; i < backlog.length; i++) {
     const t = backlog[i];
-    const failure = failureAt === i ? failureType ?? "build_failed" : undefined;
+    const failure = failureAt === i ? (failureType ?? "build_failed") : undefined;
     results.push(await runAgentOnTask(t.id, failure));
   }
   sendJson(res, 200, { results }, requestId);
 }
 
-async function handleRunFullDemo(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleRunFullDemo(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const projectId = await getCurrentProjectId();
   const d = getDb();
   const backlog = d
@@ -392,7 +444,13 @@ async function handleRunFullDemo(_req: IncomingMessage, res: ServerResponse, req
     const failure = i === 2 ? "build_failed" : undefined;
     await runAgentOnTask(backlog[i].id, failure);
   }
-  await triggerFailure(projectId, null, "model_timeout", "Frontend Agent timeout", "Switched to fallback model");
+  await triggerFailure(
+    projectId,
+    null,
+    "model_timeout",
+    "Frontend Agent timeout",
+    "Switched to fallback model",
+  );
   await triggerFailure(
     projectId,
     null,
@@ -404,7 +462,11 @@ async function handleRunFullDemo(_req: IncomingMessage, res: ServerResponse, req
   sendJson(res, 200, { ok: true }, requestId);
 }
 
-async function handleSkipToDemo(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleSkipToDemo(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   ensureSeed();
   sendJson(res, 200, { ok: true }, requestId);
 }
@@ -423,9 +485,16 @@ const InjectFailureSchema = z.object({
   message: z.string().max(400).optional(),
 });
 
-async function handleInjectFailure(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleInjectFailure(
+  req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const parsed = InjectFailureSchema.safeParse(await readJsonBody(req));
-  if (!parsed.success) return sendError(res, 400, "Invalid inject-failure payload", requestId, { issues: parsed.error.issues });
+  if (!parsed.success)
+    return sendError(res, 400, "Invalid inject-failure payload", requestId, {
+      issues: parsed.error.issues,
+    });
   const { type, message } = parsed.data;
 
   const projectId = await getCurrentProjectId();
@@ -497,10 +566,21 @@ const ApprovalSchema = z.object({
   approverName: z.string().min(1).max(60).optional(),
 });
 
-async function handleApproval(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleApproval(
+  req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const parsed = ApprovalSchema.safeParse(await readJsonBody(req));
-  if (!parsed.success) return sendError(res, 400, "Invalid approval payload", requestId, { issues: parsed.error.issues });
-  const result = decideApproval(parsed.data.approvalId, parsed.data.decision, parsed.data.approverName ?? "Animesh");
+  if (!parsed.success)
+    return sendError(res, 400, "Invalid approval payload", requestId, {
+      issues: parsed.error.issues,
+    });
+  const result = decideApproval(
+    parsed.data.approvalId,
+    parsed.data.decision,
+    parsed.data.approverName ?? "Animesh",
+  );
   sendJson(res, 200, result, requestId);
 }
 
@@ -509,18 +589,32 @@ const ApprovePrSchema = z.object({
   approverName: z.string().min(1).max(60).optional(),
 });
 
-async function handleApprovePr(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleApprovePr(
+  req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const parsed = ApprovePrSchema.safeParse(await readJsonBody(req));
-  if (!parsed.success) return sendError(res, 400, "Invalid approve-pr payload", requestId, { issues: parsed.error.issues });
+  if (!parsed.success)
+    return sendError(res, 400, "Invalid approve-pr payload", requestId, {
+      issues: parsed.error.issues,
+    });
   approvePr(parsed.data.prId, parsed.data.approverName ?? "Animesh");
   sendJson(res, 200, { ok: true }, requestId);
 }
 
 const RollbackPrSchema = z.object({ prId: z.string().min(1) });
 
-async function handleRollbackPr(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleRollbackPr(
+  req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const parsed = RollbackPrSchema.safeParse(await readJsonBody(req));
-  if (!parsed.success) return sendError(res, 400, "Invalid rollback payload", requestId, { issues: parsed.error.issues });
+  if (!parsed.success)
+    return sendError(res, 400, "Invalid rollback payload", requestId, {
+      issues: parsed.error.issues,
+    });
   const d = getDb();
   const pr = d.prepare("SELECT * FROM pull_requests WHERE id = ?").get(parsed.data.prId) as
     | { id: string; project_id: string; task_id: string | null; title: string; number: number }
@@ -546,9 +640,16 @@ const RequestEditsSchema = z.object({
   message: z.string().min(1).max(1000),
 });
 
-async function handleRequestEdits(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleRequestEdits(
+  req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const parsed = RequestEditsSchema.safeParse(await readJsonBody(req));
-  if (!parsed.success) return sendError(res, 400, "Invalid request-edits payload", requestId, { issues: parsed.error.issues });
+  if (!parsed.success)
+    return sendError(res, 400, "Invalid request-edits payload", requestId, {
+      issues: parsed.error.issues,
+    });
   const d = getDb();
   const pr = d.prepare("SELECT * FROM pull_requests WHERE id = ?").get(parsed.data.prId) as
     | { id: string; project_id: string; task_id: string | null; title: string; number: number }
@@ -581,9 +682,16 @@ const ExplainSchema = z
   })
   .refine((v) => v.approvalId || v.prId, { message: "approvalId or prId required" });
 
-async function handleExplain(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleExplain(
+  req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const parsed = ExplainSchema.safeParse(await readJsonBody(req));
-  if (!parsed.success) return sendError(res, 400, "Invalid explain payload", requestId, { issues: parsed.error.issues });
+  if (!parsed.success)
+    return sendError(res, 400, "Invalid explain payload", requestId, {
+      issues: parsed.error.issues,
+    });
 
   const d = getDb();
   let reason = "";
@@ -617,9 +725,16 @@ const DeploySchema = z.object({
   environment: z.enum(["preview", "staging", "production"]).optional(),
 });
 
-async function handleDeploy(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleDeploy(
+  req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const parsed = DeploySchema.safeParse(await readJsonBody(req));
-  if (!parsed.success) return sendError(res, 400, "Invalid deploy payload", requestId, { issues: parsed.error.issues });
+  if (!parsed.success)
+    return sendError(res, 400, "Invalid deploy payload", requestId, {
+      issues: parsed.error.issues,
+    });
   const environment = parsed.data.environment ?? "preview";
   const projectId = await getCurrentProjectId();
   const url = `https://preview-${Math.random().toString(36).slice(2, 8)}.forgecloud.dev`;
@@ -629,9 +744,16 @@ async function handleDeploy(req: IncomingMessage, res: ServerResponse, requestId
 
 const DeployProdSchema = z.object({ fail: z.boolean().optional() });
 
-async function handleDeployProduction(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleDeployProduction(
+  req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const parsed = DeployProdSchema.safeParse(await readJsonBody(req));
-  if (!parsed.success) return sendError(res, 400, "Invalid deploy-production payload", requestId, { issues: parsed.error.issues });
+  if (!parsed.success)
+    return sendError(res, 400, "Invalid deploy-production payload", requestId, {
+      issues: parsed.error.issues,
+    });
   const projectId = await getCurrentProjectId();
   if (parsed.data.fail) {
     const id = recordDeployment(
@@ -645,7 +767,11 @@ async function handleDeployProduction(req: IncomingMessage, res: ServerResponse,
     return sendJson(
       res,
       200,
-      { deploymentId: id, status: "failed", message: "Deploy failed but previous version is still live." },
+      {
+        deploymentId: id,
+        status: "failed",
+        message: "Deploy failed but previous version is still live.",
+      },
       requestId,
     );
   }
@@ -654,16 +780,23 @@ async function handleDeployProduction(req: IncomingMessage, res: ServerResponse,
   sendJson(res, 200, { deploymentId: id, status: "live", url }, requestId);
 }
 
-async function handleReset(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleReset(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const d = getDb();
   const projectId = await getCurrentProjectId();
+  // changes is keyed by pr_id, not project_id — wipe it via the PR join first.
+  d.prepare(
+    `DELETE FROM changes WHERE pr_id IN (SELECT id FROM pull_requests WHERE project_id = ?)`,
+  ).run(projectId);
   const tables = [
     "chat_messages",
     "approvals",
     "deployments",
     "recovery_events",
     "agent_runs",
-    "changes",
     "pull_requests",
     "tasks",
     "agents",
@@ -679,9 +812,16 @@ const CommentSchema = z.object({
   selector: z.string().max(400).optional().nullable(),
 });
 
-async function handleComment(req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleComment(
+  req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const parsed = CommentSchema.safeParse(await readJsonBody(req));
-  if (!parsed.success) return sendError(res, 400, "Invalid comment payload", requestId, { issues: parsed.error.issues });
+  if (!parsed.success)
+    return sendError(res, 400, "Invalid comment payload", requestId, {
+      issues: parsed.error.issues,
+    });
   const { text, selector } = parsed.data;
 
   const d = getDb();
@@ -716,7 +856,12 @@ async function handleComment(req: IncomingMessage, res: ServerResponse, requestI
     ids.newMessage(),
     projectId,
     `Turned your preview comment into a task: "${taskSpec.title}" → ${taskSpec.ownerAgent}.`,
-    JSON.stringify({ kind: "task_created", taskIds: tasks.map((t) => t.id), source: "preview_comment", commentId }),
+    JSON.stringify({
+      kind: "task_created",
+      taskIds: tasks.map((t) => t.id),
+      source: "preview_comment",
+      commentId,
+    }),
   );
 
   const rows = d
@@ -727,7 +872,11 @@ async function handleComment(req: IncomingMessage, res: ServerResponse, requestI
 
 // ---------- simple GET helpers ----------------------------------------------
 
-async function handleGetTasks(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleGetTasks(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const d = getDb();
   const projectId = await getCurrentProjectId();
   const tasks = d
@@ -736,32 +885,61 @@ async function handleGetTasks(_req: IncomingMessage, res: ServerResponse, reques
   sendJson(res, 200, tasks, requestId);
 }
 
-async function handleGetPrs(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleGetPrs(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const projectId = await getCurrentProjectId();
   sendJson(res, 200, listPullRequests(projectId), requestId);
 }
 
-async function handleGetAgents(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleGetAgents(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const projectId = await getCurrentProjectId();
   sendJson(res, 200, getAgents(projectId), requestId);
 }
 
-async function handleGetFailures(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleGetFailures(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const projectId = await getCurrentProjectId();
   sendJson(res, 200, listRecoveryEvents(projectId), requestId);
 }
 
-async function handleGetApprovals(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleGetApprovals(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const projectId = await getCurrentProjectId();
   sendJson(res, 200, getApprovalQueue(projectId), requestId);
 }
 
-async function handleGetTeam(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleGetTeam(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const d = getDb();
-  sendJson(res, 200, d.prepare("SELECT * FROM team_members WHERE workspace_id = ?").all(ids.workspace), requestId);
+  sendJson(
+    res,
+    200,
+    d.prepare("SELECT * FROM team_members WHERE workspace_id = ?").all(ids.workspace),
+    requestId,
+  );
 }
 
-async function handleGetChat(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleGetChat(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const d = getDb();
   const projectId = await getCurrentProjectId();
   const rows = d
@@ -770,47 +948,179 @@ async function handleGetChat(_req: IncomingMessage, res: ServerResponse, request
   sendJson(res, 200, rows, requestId);
 }
 
-async function handleGetDeployments(_req: IncomingMessage, res: ServerResponse, requestId: string): Promise<void> {
+async function handleGetDeployments(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
   const projectId = await getCurrentProjectId();
   sendJson(res, 200, listDeployments(projectId), requestId);
+}
+
+async function handleGetAgentRuns(
+  req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
+  const url = req.url ?? "";
+  const pathname = url.split("?")[0];
+  const query = url.includes("?") ? url.slice(url.indexOf("?") + 1) : "";
+  const params = new URLSearchParams(query);
+
+  // Accept either /api/agent-runs?agentId=… or /api/agent-runs/:agentId
+  let agentId = params.get("agentId") ?? "";
+  if (!agentId) {
+    const match = pathname.match(/^\/api\/agent-runs\/([^/]+)$/);
+    if (match) agentId = decodeURIComponent(match[1]);
+  }
+
+  if (!agentId) {
+    return sendError(res, 400, "agentId is required", requestId);
+  }
+
+  const projectId = await getCurrentProjectId();
+  const d = getDb();
+  const rows = d
+    .prepare(
+      `SELECT r.*, (SELECT title FROM tasks WHERE id = r.task_id) AS task_title
+       FROM agent_runs r
+       WHERE r.agent_id = ? AND r.project_id = ?
+       ORDER BY r.started_at DESC`,
+    )
+    .all(agentId, projectId);
+  sendJson(res, 200, rows, requestId);
 }
 
 // ---------- router ----------------------------------------------------------
 
 type RouteHandler = (req: IncomingMessage, res: ServerResponse, requestId: string) => Promise<void>;
 
-const ROUTES: Array<{ method: string; pattern: RegExp; handler: RouteHandler; rate?: RateLimitConfig }> = [
+const ROUTES: Array<{
+  method: string;
+  pattern: RegExp;
+  handler: RouteHandler;
+  rate?: RateLimitConfig;
+}> = [
   // GET (cheap)
   { method: "GET", pattern: /^\/api\/health$/, handler: handleGetHealth },
   { method: "GET", pattern: /^\/api\/state$/, handler: handleGetState, rate: RATE_CONFIGS.cheap },
   { method: "GET", pattern: /^\/api\/tasks$/, handler: handleGetTasks, rate: RATE_CONFIGS.cheap },
   { method: "GET", pattern: /^\/api\/prs$/, handler: handleGetPrs, rate: RATE_CONFIGS.cheap },
   { method: "GET", pattern: /^\/api\/agents$/, handler: handleGetAgents, rate: RATE_CONFIGS.cheap },
-  { method: "GET", pattern: /^\/api\/failures$/, handler: handleGetFailures, rate: RATE_CONFIGS.cheap },
-  { method: "GET", pattern: /^\/api\/approvals$/, handler: handleGetApprovals, rate: RATE_CONFIGS.cheap },
+  {
+    method: "GET",
+    pattern: /^\/api\/failures$/,
+    handler: handleGetFailures,
+    rate: RATE_CONFIGS.cheap,
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/approvals$/,
+    handler: handleGetApprovals,
+    rate: RATE_CONFIGS.cheap,
+  },
   { method: "GET", pattern: /^\/api\/team$/, handler: handleGetTeam, rate: RATE_CONFIGS.cheap },
   { method: "GET", pattern: /^\/api\/chat$/, handler: handleGetChat, rate: RATE_CONFIGS.cheap },
-  { method: "GET", pattern: /^\/api\/deployments$/, handler: handleGetDeployments, rate: RATE_CONFIGS.cheap },
+  {
+    method: "GET",
+    pattern: /^\/api\/deployments$/,
+    handler: handleGetDeployments,
+    rate: RATE_CONFIGS.cheap,
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/agent-runs(?:\/[^/]+)?$/,
+    handler: handleGetAgentRuns,
+    rate: RATE_CONFIGS.cheap,
+  },
   // POST (expensive — LLM calls or mutations)
-  { method: "POST", pattern: /^\/api\/intake$/, handler: handleIntake, rate: RATE_CONFIGS.expensive },
+  {
+    method: "POST",
+    pattern: /^\/api\/intake$/,
+    handler: handleIntake,
+    rate: RATE_CONFIGS.expensive,
+  },
   { method: "POST", pattern: /^\/api\/chat$/, handler: handleChat, rate: RATE_CONFIGS.expensive },
-  { method: "POST", pattern: /^\/api\/run-task$/, handler: handleRunTask, rate: RATE_CONFIGS.expensive },
-  { method: "POST", pattern: /^\/api\/run-all$/, handler: handleRunAll, rate: RATE_CONFIGS.expensive },
-  { method: "POST", pattern: /^\/api\/run-full-demo$/, handler: handleRunFullDemo, rate: RATE_CONFIGS.expensive },
-  { method: "POST", pattern: /^\/api\/skip-to-demo$/, handler: handleSkipToDemo, rate: RATE_CONFIGS.cheap },
-  { method: "POST", pattern: /^\/api\/inject-failure$/, handler: handleInjectFailure, rate: RATE_CONFIGS.expensive },
-  { method: "POST", pattern: /^\/api\/approval$/, handler: handleApproval, rate: RATE_CONFIGS.cheap },
-  { method: "POST", pattern: /^\/api\/approve-pr$/, handler: handleApprovePr, rate: RATE_CONFIGS.cheap },
-  { method: "POST", pattern: /^\/api\/rollback-pr$/, handler: handleRollbackPr, rate: RATE_CONFIGS.cheap },
-  { method: "POST", pattern: /^\/api\/request-edits$/, handler: handleRequestEdits, rate: RATE_CONFIGS.expensive },
-  { method: "POST", pattern: /^\/api\/explain$/, handler: handleExplain, rate: RATE_CONFIGS.expensive },
+  {
+    method: "POST",
+    pattern: /^\/api\/run-task$/,
+    handler: handleRunTask,
+    rate: RATE_CONFIGS.expensive,
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/run-all$/,
+    handler: handleRunAll,
+    rate: RATE_CONFIGS.expensive,
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/run-full-demo$/,
+    handler: handleRunFullDemo,
+    rate: RATE_CONFIGS.expensive,
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/skip-to-demo$/,
+    handler: handleSkipToDemo,
+    rate: RATE_CONFIGS.cheap,
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/inject-failure$/,
+    handler: handleInjectFailure,
+    rate: RATE_CONFIGS.expensive,
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/approval$/,
+    handler: handleApproval,
+    rate: RATE_CONFIGS.cheap,
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/approve-pr$/,
+    handler: handleApprovePr,
+    rate: RATE_CONFIGS.cheap,
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/rollback-pr$/,
+    handler: handleRollbackPr,
+    rate: RATE_CONFIGS.cheap,
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/request-edits$/,
+    handler: handleRequestEdits,
+    rate: RATE_CONFIGS.expensive,
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/explain$/,
+    handler: handleExplain,
+    rate: RATE_CONFIGS.expensive,
+  },
   { method: "POST", pattern: /^\/api\/deploy$/, handler: handleDeploy, rate: RATE_CONFIGS.cheap },
-  { method: "POST", pattern: /^\/api\/deploy-production$/, handler: handleDeployProduction, rate: RATE_CONFIGS.cheap },
+  {
+    method: "POST",
+    pattern: /^\/api\/deploy-production$/,
+    handler: handleDeployProduction,
+    rate: RATE_CONFIGS.cheap,
+  },
   { method: "POST", pattern: /^\/api\/reset$/, handler: handleReset, rate: RATE_CONFIGS.cheap },
-  { method: "POST", pattern: /^\/api\/comment$/, handler: handleComment, rate: RATE_CONFIGS.expensive },
+  {
+    method: "POST",
+    pattern: /^\/api\/comment$/,
+    handler: handleComment,
+    rate: RATE_CONFIGS.expensive,
+  },
 ];
 
-export async function handleApiRequest(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
+export async function handleApiRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<boolean> {
   const url = req.url ?? "";
   if (!url.startsWith("/api/")) return false;
   const pathname = url.split("?")[0];
@@ -825,18 +1135,39 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
         const { allowed, retryAfterMs } = consume(key, route.rate);
         if (!allowed) {
           res.setHeader("retry-after", Math.ceil(retryAfterMs / 1000).toString());
-          log.warn("rate_limited", { requestId, route: pathname, method: req.method, retryAfterMs });
-          return sendError(res, 429, "Rate limit exceeded — slow down a moment.", requestId, { retryAfterMs }), true;
+          log.warn("rate_limited", {
+            requestId,
+            route: pathname,
+            method: req.method,
+            retryAfterMs,
+          });
+          return (
+            sendError(res, 429, "Rate limit exceeded — slow down a moment.", requestId, {
+              retryAfterMs,
+            }),
+            true
+          );
         }
       }
 
       log.info("api_start", { requestId, route: pathname, method: req.method });
       try {
         await route.handler(req, res, requestId);
-        log.info("api_end", { requestId, route: pathname, ms: Date.now() - startedAt, status: res.statusCode });
+        log.info("api_end", {
+          requestId,
+          route: pathname,
+          ms: Date.now() - startedAt,
+          status: res.statusCode,
+        });
       } catch (err) {
         const error = err as Error;
-        log.error("api_error", { requestId, route: pathname, ms: Date.now() - startedAt, error: error?.message, stack: error?.stack });
+        log.error("api_error", {
+          requestId,
+          route: pathname,
+          ms: Date.now() - startedAt,
+          error: error?.message,
+          stack: error?.stack,
+        });
         if (!res.headersSent) sendError(res, 500, error?.message ?? "internal error", requestId);
         else res.end();
       }

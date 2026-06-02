@@ -1,12 +1,21 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useMatchRoute } from "@tanstack/react-router";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Bot, Loader2 } from "lucide-react";
 import { useForgeState } from "@/lib/client";
 import type { Agent } from "@/lib/db";
 
 export const Route = createFileRoute("/app/agents")({
-  component: AgentsScreen,
+  component: AgentsRoute,
 });
+
+function AgentsRoute() {
+  // When a child route like /app/agents/$agentId is active, render only the
+  // child via <Outlet />. Otherwise render the agent list.
+  const matchRoute = useMatchRoute();
+  const inDetail = matchRoute({ to: "/app/agents/$agentId", fuzzy: false });
+  if (inDetail) return <Outlet />;
+  return <AgentsScreen />;
+}
 
 const typeColors: Record<string, string> = {
   product: "var(--violet)",
@@ -50,7 +59,9 @@ function AgentsScreen() {
         {agents.length === 0 ? (
           <div className="rounded-3xl border-2 border-dashed border-border bg-card p-10 text-center">
             <Bot className="mx-auto size-10 text-muted-foreground" />
-            <p className="mt-4 text-muted-foreground">No agents yet. Start a project to spin up the team.</p>
+            <p className="mt-4 text-muted-foreground">
+              No agents yet. Start a project to spin up the team.
+            </p>
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -64,18 +75,32 @@ function AgentsScreen() {
   );
 }
 
-function AgentCard({ agent, tasks }: { agent: Agent; tasks: { title: string; status: string; id: string }[] }) {
+function AgentCard({
+  agent,
+  tasks,
+}: {
+  agent: Agent;
+  tasks: { title: string; status: string; id: string }[];
+}) {
   const safeTasks = tasks ?? [];
   const currentTask = safeTasks.find((t) => t.id === agent.current_task_id);
   const recent = safeTasks.filter((t) => t.assigned_agent_id === agent.id).slice(0, 3);
   const permissions: { allowed: string[]; needsApproval: string[] } = (() => {
-    try { return JSON.parse(agent.permissions); } catch { return { allowed: [], needsApproval: [] }; }
+    try {
+      return JSON.parse(agent.permissions);
+    } catch {
+      return { allowed: [], needsApproval: [] };
+    }
   })();
 
   const color = typeColors[agent.type] ?? "var(--violet)";
 
   return (
-    <div className="rounded-3xl border border-border bg-card p-5 card-hover">
+    <Link
+      to="/app/agents/$agentId"
+      params={{ agentId: agent.id }}
+      className="block rounded-3xl border border-border bg-card p-5 card-hover cursor-pointer hover:border-brand/40 hover:shadow-md transition-all"
+    >
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <div
@@ -127,7 +152,9 @@ function AgentCard({ agent, tasks }: { agent: Agent; tasks: { title: string; sta
           <div className="mt-1 space-y-1">
             {recent.map((t) => (
               <div key={t.id} className="flex items-center gap-2 text-xs">
-                <span className={`size-1.5 rounded-full ${t.status === "done" ? "bg-mint" : t.status === "review" ? "bg-amber" : "bg-sky"}`} />
+                <span
+                  className={`size-1.5 rounded-full ${t.status === "done" ? "bg-mint" : t.status === "review" ? "bg-amber" : "bg-sky"}`}
+                />
                 <span className="line-clamp-1">{t.title}</span>
               </div>
             ))}
@@ -144,7 +171,7 @@ function AgentCard({ agent, tasks }: { agent: Agent; tasks: { title: string; sta
           ))}
         </div>
       )}
-    </div>
+    </Link>
   );
 }
 
@@ -156,7 +183,9 @@ function StatusPill({ status }: { status: string }) {
     error: "bg-coral/20 text-coral",
   };
   return (
-    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${colors[status] ?? "bg-muted"}`}>
+    <span
+      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${colors[status] ?? "bg-muted"}`}
+    >
       {status}
     </span>
   );

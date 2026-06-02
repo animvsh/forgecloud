@@ -34,6 +34,15 @@ export function useForgeState() {
   });
 }
 
+export function useAgentRuns(agentId: string | undefined) {
+  return useQuery({
+    queryKey: ["agent-runs", agentId],
+    queryFn: () => apiGet<any[]>(`/api/agent-runs?agentId=${encodeURIComponent(agentId ?? "")}`),
+    enabled: !!agentId,
+    refetchInterval: 4000,
+  });
+}
+
 export function useSendChat() {
   const qc = useQueryClient();
   return useMutation({
@@ -101,8 +110,9 @@ export function useApprovePr() {
 export function useDeploy() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { prId?: string; environment?: "preview" | "staging" | "production" } = {}) =>
-      apiPost<any>("/api/deploy", vars),
+    mutationFn: (
+      vars: { prId?: string; environment?: "preview" | "staging" | "production" } = {},
+    ) => apiPost<any>("/api/deploy", vars),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }
@@ -110,8 +120,7 @@ export function useDeploy() {
 export function useDeployProduction() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { fail?: boolean } = {}) =>
-      apiPost<any>("/api/deploy-production", vars),
+    mutationFn: (vars: { fail?: boolean } = {}) => apiPost<any>("/api/deploy-production", vars),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }
@@ -143,8 +152,7 @@ export function useSkipToDemo() {
 export function useAddComment() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { text: string; selector?: string }) =>
-      apiPost<any>("/api/comment", vars),
+    mutationFn: (vars: { text: string; selector?: string }) => apiPost<any>("/api/comment", vars),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }

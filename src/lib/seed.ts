@@ -9,6 +9,20 @@ const DEMO_PROJECT_ID = "proj-pielot-waitlist";
 const SEED_PRIMARY_MODEL = getProvider()?.primaryModel ?? "MiniMax-Text-01";
 const SEED_FALLBACK_MODEL = getProvider()?.fallbackModel ?? "MiniMax-M1";
 
+// Match the shape returned by AGENT_PERMS in lib/agents.ts so the UI's
+// permissions.allowed.length / permissions.needsApproval.length never NPEs.
+const SEED_AGENT_PERMS: Record<string, { allowed: string[]; needsApproval: string[] }> = {
+  product: { allowed: ["create_tasks", "edit_specs"], needsApproval: ["delete_tasks"] },
+  design: { allowed: ["edit_ui_files"], needsApproval: ["major_brand_changes"] },
+  frontend: { allowed: ["edit_frontend_files"], needsApproval: ["production_deploy"] },
+  backend: { allowed: ["create_backend_functions", "edit_database"], needsApproval: ["database_migrations"] },
+  qa: { allowed: ["run_tests"], needsApproval: [] },
+  devops: { allowed: ["create_preview_deploys"], needsApproval: ["production_deploy"] },
+  auth: { allowed: ["edit_auth_files"], needsApproval: ["auth_changes"] },
+  safety: { allowed: ["block_risky_actions"], needsApproval: [] },
+  recovery: { allowed: ["retry_runs", "rollback_deployments"], needsApproval: [] },
+};
+
 export function ensureSeed(): { user: User; workspace: Workspace } {
   const db = getDb();
   const existingUser = db
@@ -127,7 +141,7 @@ function seedDemoProject() {
       name,
       type,
       role,
-      JSON.stringify(["approve", "request", "view"]),
+      JSON.stringify(SEED_AGENT_PERMS[type] ?? { allowed: [], needsApproval: [] }),
       status,
       SEED_PRIMARY_MODEL,
       SEED_FALLBACK_MODEL,

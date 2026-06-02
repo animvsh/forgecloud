@@ -1,5 +1,5 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { MessageSquare, Bot, ListChecks, Eye, GitBranch, ShieldAlert, Rocket, Users, FileText, Home } from "lucide-react";
+import { MessageSquare, Bot, ListChecks, Eye, GitBranch, ShieldAlert, Rocket, Users, FileText, Home, Settings } from "lucide-react";
 
 export function SiteNav() {
   return (
@@ -36,6 +36,7 @@ const appNav = [
   { to: "/app/failures", label: "Recovery", icon: ShieldAlert },
   { to: "/app/team", label: "Team", icon: Users },
   { to: "/app/report", label: "Report", icon: FileText },
+  { to: "/app/settings", label: "Settings", icon: Settings },
 ] as const;
 
 export function AppNav({ pendingApprovals = 0 }: { pendingApprovals?: number }) {
