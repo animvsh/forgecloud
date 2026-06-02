@@ -65,8 +65,9 @@ function AgentsScreen() {
 }
 
 function AgentCard({ agent, tasks }: { agent: Agent; tasks: { title: string; status: string; id: string }[] }) {
-  const currentTask = tasks.find((t) => t.id === agent.current_task_id);
-  const recent = tasks.filter((t) => t.assigned_agent_id === agent.id).slice(0, 3);
+  const safeTasks = tasks ?? [];
+  const currentTask = safeTasks.find((t) => t.id === agent.current_task_id);
+  const recent = safeTasks.filter((t) => t.assigned_agent_id === agent.id).slice(0, 3);
   const permissions: { allowed: string[]; needsApproval: string[] } = (() => {
     try { return JSON.parse(agent.permissions); } catch { return { allowed: [], needsApproval: [] }; }
   })();
