@@ -13,7 +13,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 
-import { ensureSeed, ids } from "../lib/seed";
+import { ensureSeed, ids, seedDemoProject } from "../lib/seed";
 import { getDb, type Change, type Project, type Task, type User, type Workspace } from "../lib/db";
 import {
   approvePr,
@@ -836,6 +836,24 @@ async function handleDeployProduction(
       issues: parsed.error.issues,
     });
   const projectId = await getCurrentProjectId();
+  // PRD §5 Screen 7: production deploy must clear pending human approvals + DB-migration PRs.
+  const d = getDb();
+  const pendingApprovals = d
+    .prepare(`SELECT id, reason, risk_level FROM approvals WHERE project_id = ? AND status = 'pending'`)
+    .all(projectId) as { id: string; reason: string; risk_level: string }[];
+  if (pendingApprovals.length > 0) {
+    return sendJson(
+      res,
+      409,
+      {
+        ok: false,
+        error: "approval_required",
+        message: `${pendingApprovals.length} pending approval(s) must be resolved before production deploy.`,
+        pending: pendingApprovals,
+      },
+      requestId,
+    );
+  }
   if (parsed.data.fail) {
     const id = recordDeployment(
       projectId,
@@ -882,9 +900,21 @@ async function handleReset(
     "tasks",
     "agents",
     "preview_comments",
+    "worktrees",
+    "commits",
+    "branches",
   ];
   for (const t of tables) d.prepare(`DELETE FROM ${t} WHERE project_id = ?`).run(projectId);
+  d.prepare(`DELETE FROM notifications WHERE project_id = ?`).run(projectId);
   d.prepare(`UPDATE projects SET status = 'intake' WHERE id = ?`).run(projectId);
+  // If the active project is the canonical Pleasure Pizza demo, re-seed it.
+  if (projectId === "proj-pleasure-pizza") {
+    try {
+      seedDemoProject();
+    } catch (err) {
+      // If re-seed fails (e.g. data race), leave the project empty — the user can /api/intake to start fresh.
+    }
+  }
   sendJson(res, 200, { ok: true }, requestId);
 }
 

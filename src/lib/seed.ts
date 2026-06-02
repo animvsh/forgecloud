@@ -186,7 +186,7 @@ function seedConnectorsAndSuggestions() {
   }
 }
 
-function seedDemoProject() {
+export function seedDemoProject() {
   const db = getDb();
   const now = Date.now();
 

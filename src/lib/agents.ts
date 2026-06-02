@@ -378,7 +378,7 @@ export function recordSecretBlock(projectId: string, prId: string | null, secret
 }
 
 const SECRET_PATTERNS = [
-  /(?:sk|pk|api[_-]?key|secret|token)[_-][a-zA-Z0-9]{20,}/i,
+  /(?:sk|pk|api[_-]?key|secret|token)[_-][a-zA-Z0-9]{6,}/i,
   /AIza[0-9A-Za-z\\-_]{35}/,
   /ghp_[a-zA-Z0-9]{36}/,
   /xox[abp]-[a-zA-Z0-9-]+/,
