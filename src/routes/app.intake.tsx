@@ -9,10 +9,10 @@ export const Route = createFileRoute("/app/intake")({
 });
 
 const STEPS = [
-  { key: "projectName", label: "What are you building?", placeholder: "A simple CRM for my sales team", defaultValue: "Pielot Waitlist" },
-  { key: "userType", label: "Who will use it?", placeholder: "Sales team", defaultValue: "Early adopters and the general public" },
-  { key: "firstVersion", label: "What should v1 do first?", placeholder: "Track leads, notes, and follow-ups", defaultValue: "Collect email signups, show position in line, and let me see signups in a simple admin view" },
-  { key: "style", label: "What design style?", placeholder: "Clean, modern, like Notion", defaultValue: "Clean, modern, like Linear — warm accent color" },
+  { key: "projectName", label: "What are you building?", placeholder: "A simple CRM for my sales team", defaultValue: "Simple CRM" },
+  { key: "userType", label: "Who will use it?", placeholder: "Sales team", defaultValue: "My five-person sales team" },
+  { key: "firstVersion", label: "What should v1 do first?", placeholder: "Track leads, notes, and follow-ups", defaultValue: "Lead dashboard, add lead form, notes per lead, follow-up date, basic login" },
+  { key: "style", label: "What design style?", placeholder: "Clean, modern, like Notion", defaultValue: "Clean, modern, Notion-like" },
 ] as const;
 
 function IntakeScreen() {
@@ -157,7 +157,7 @@ function IntakeScreen() {
             className="inline-flex items-center gap-2 rounded-full border-2 border-dashed border-border bg-card px-5 py-2.5 text-sm font-medium text-muted-foreground hover:border-brand hover:text-foreground disabled:opacity-40"
           >
             {skip.isPending ? <Loader2 className="size-4 animate-spin" /> : <Zap className="size-4" />}
-            Skip to demo — load Pielot Waitlist
+            Skip to demo — load Pleasure Pizza Ops
           </button>
           <div className="text-xs text-muted-foreground">
             {data?.aiAvailable ? "AI agents ready" : "AI in fallback mode — you'll get a template plan"}
