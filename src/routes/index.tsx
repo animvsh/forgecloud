@@ -71,7 +71,7 @@ function Landing() {
               {hasExistingBuild ? (
                 <>
                   <Link
-                    to="/app/index"
+                    to="/app"
                     className="rounded-full border border-border bg-card px-6 py-3.5 font-medium hover:bg-muted"
                   >
                     Try the demo
@@ -98,7 +98,7 @@ function Landing() {
                         <div className="mt-4 flex justify-end gap-2">
                           <button onClick={() => setShowReset(false)} className="rounded-full border border-border px-4 py-2 text-sm hover:bg-muted">Cancel</button>
                           <button
-                            onClick={async () => { await reset.mutateAsync(); setShowReset(false); navigate({ to: "/app/index" }); }}
+                            onClick={async () => { await reset.mutateAsync(); setShowReset(false); navigate({ to: "/app" }); }}
                             className="rounded-full bg-coral px-4 py-2 text-sm font-medium text-white hover:brightness-110"
                           >
                             Reset
@@ -109,7 +109,7 @@ function Landing() {
                   )}
                 </>
               ) : (
-                <Link to="/app/index" className="rounded-full border border-border bg-card px-6 py-3.5 font-medium hover:bg-muted">
+                <Link to="/app" className="rounded-full border border-border bg-card px-6 py-3.5 font-medium hover:bg-muted">
                   Try the demo
                 </Link>
               )}
@@ -221,7 +221,7 @@ function Landing() {
               <Link to="/app/intake" className="inline-flex items-center gap-2 rounded-full bg-foreground px-6 py-3.5 font-medium text-background hover:opacity-90">
                 Start building <ArrowRight className="size-4" />
               </Link>
-              <Link to="/app/index" className="rounded-full border border-border bg-card px-6 py-3.5 font-medium hover:bg-muted">
+              <Link to="/app" className="rounded-full border border-border bg-card px-6 py-3.5 font-medium hover:bg-muted">
                 Try the demo
               </Link>
             </div>

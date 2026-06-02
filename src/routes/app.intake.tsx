@@ -52,12 +52,12 @@ function IntakeScreen() {
       reviewers,
       rawPrompt,
     });
-    navigate({ to: "/app/index" });
+    navigate({ to: "/app" });
   }
 
   async function handleSkipToDemo() {
     await skip.mutateAsync();
-    navigate({ to: "/app/index" });
+    navigate({ to: "/app" });
   }
 
   return (

@@ -133,6 +133,15 @@ export function useResetProject() {
   });
 }
 
+export function useNewProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { name: string; description?: string }) =>
+      apiPost<any>("/api/projects", vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
+
 export function useRunFullDemo() {
   const qc = useQueryClient();
   return useMutation({
@@ -153,6 +162,26 @@ export function useAddComment() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (vars: { text: string; selector?: string }) => apiPost<any>("/api/comment", vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
+
+export function useBlame() {
+  return useMutation({
+    mutationFn: (vars: { selector?: string; label: string }) =>
+      apiPost<{ explanation: string; provider: string; prNumber?: number }>("/api/blame", vars),
+  });
+}
+
+export function useAddTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      title: string;
+      description?: string;
+      ownerAgent?: string;
+      riskLevel?: "low" | "med" | "high";
+    }) => apiPost<{ ok: boolean; task: any }>("/api/add-task", vars),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }
@@ -178,6 +207,84 @@ export function useRequestEdits() {
   return useMutation({
     mutationFn: (vars: { prId: string; message: string }) =>
       apiPost<{ ok: true; task: any }>("/api/request-edits", vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
+
+export function useMarkNotificationRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { notificationId: string }) =>
+      apiPost<{ ok: true; unread: number }>("/api/notifications/read", vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
+
+export function useMarkAllNotificationsRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost<{ ok: true; unread: 0 }>("/api/notifications/read-all", {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
+
+export function useMergeBranch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { branchId: string }) =>
+      apiPost<{ ok: true; branch: any }>("/api/branches/merge", vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
+
+export function useArchiveBranch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { branchId: string }) =>
+      apiPost<{ ok: true; branch: any }>("/api/branches/archive", vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
+
+export function useSpawnWorktree() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { branchId?: string; name: string }) =>
+      apiPost<{ ok: true; worktree: any }>("/api/worktrees", vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
+
+export function useConnectTool() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { provider: string; account?: string }) =>
+      apiPost<{ ok: true; connection: any }>("/api/connect", vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
+
+export function useDisconnectTool() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { provider: string }) => apiPost<{ ok: true }>("/api/disconnect", vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
+
+export function useScan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost<{ discoveries: any[] }>("/api/scan", {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
+
+export function useBuildSuggestedApp() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { appId: string }) =>
+      apiPost<{ ok: true; project: any; tasks: any[] }>("/api/build-app", vars),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }

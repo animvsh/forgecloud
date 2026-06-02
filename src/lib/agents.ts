@@ -2,6 +2,7 @@ import { getDb, type Agent, type Project, type Task, type PullRequest, type Reco
 import { ensureSeed, ids } from "./seed";
 import { classifyRisk, generatePrSummary, narrateRecovery } from "./ai";
 import { getProvider } from "./providers";
+import { createNotification, findOrCreateBranchByName, recordCommit } from "./vcs";
 
 const PRIMARY_MODEL = getProvider()?.primaryModel ?? "MiniMax-Text-01";
 const FALLBACK_MODEL = getProvider()?.fallbackModel ?? "MiniMax-M1";
@@ -260,6 +261,32 @@ export async function runAgentOnTask(
     );
   }
 
+  // Branch + commit for the git-like primitives.
+  const branch = findOrCreateBranchByName(task.project_id, sourceBranch, agent?.id ?? null, prId);
+  recordCommit({
+    projectId: task.project_id,
+    branchId: branch.id,
+    prId,
+    message: summary.split("\n")[0].slice(0, 100),
+    author: agent?.name ?? "Agent",
+    filesChanged: fileAreas.length,
+  });
+
+  // Notify the workspace.
+  const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(task.project_id) as
+    | { workspace_id: string }
+    | undefined;
+  if (project) {
+    createNotification({
+      workspaceId: project.workspace_id,
+      projectId: task.project_id,
+      kind: "pr_opened",
+      title: `PR #${prNumber} opened: ${task.title}`,
+      body: summary.slice(0, 200),
+      link: "/app/changes",
+    });
+  }
+
   db.prepare(
     `UPDATE tasks SET status = 'review', linked_pr_id = ? WHERE id = ?`,
   ).run(prId, taskId);
@@ -277,6 +304,16 @@ export async function runAgentOnTask(
       `INSERT INTO approvals (id, project_id, pr_id, reason, risk_level, details, status, created_at)
        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`,
     ).run(ids.newApproval(), task.project_id, prId, reason, risk, details, Date.now());
+    if (project) {
+      createNotification({
+        workspaceId: project.workspace_id,
+        projectId: task.project_id,
+        kind: "approval_needed",
+        title: `Approval needed: PR #${prNumber}`,
+        body: reason,
+        link: "/app/changes",
+      });
+    }
   }
 
   if (agent) {
@@ -376,6 +413,13 @@ export function getApprovalQueue(projectId: string) {
     .all(projectId);
 }
 
+function workspaceOfProject(projectId: string): string | undefined {
+  const row = getDb()
+    .prepare("SELECT workspace_id FROM projects WHERE id = ?")
+    .get(projectId) as { workspace_id: string } | undefined;
+  return row?.workspace_id;
+}
+
 export function decideApproval(
   approvalId: string,
   decision: "approve" | "reject",
@@ -401,6 +445,17 @@ export function decideApproval(
       ).run(approval.pr_id);
     }
     pr = db.prepare("SELECT * FROM pull_requests WHERE id = ?").get(approval.pr_id) as PullRequest;
+    const wsId = workspaceOfProject(approval.project_id);
+    if (wsId && pr) {
+      createNotification({
+        workspaceId: wsId,
+        projectId: approval.project_id,
+        kind: decision === "approve" ? "pr_approved" : "pr_rolled_back",
+        title: decision === "approve" ? `PR #${pr.number} approved by ${approverName}` : `PR #${pr.number} rejected by ${approverName}`,
+        body: pr.title,
+        link: "/app/changes",
+      });
+    }
   }
   return { approval: db.prepare("SELECT * FROM approvals WHERE id = ?").get(approvalId), pr };
 }
@@ -411,6 +466,50 @@ export function approvePr(prId: string, approverName: string): void {
     `UPDATE pull_requests SET status = 'approved', approver_name = ?, approved_at = ? WHERE id = ?`,
   ).run(approverName, Date.now(), prId);
   db.prepare(`UPDATE tasks SET status = 'done' WHERE linked_pr_id = ?`).run(prId);
+  const pr = db.prepare("SELECT * FROM pull_requests WHERE id = ?").get(prId) as PullRequest | undefined;
+  if (pr) {
+    const wsId = workspaceOfProject(pr.project_id);
+    if (wsId) {
+      createNotification({
+        workspaceId: wsId,
+        projectId: pr.project_id,
+        kind: "pr_approved",
+        title: `PR #${pr.number} approved by ${approverName}`,
+        body: pr.title,
+        link: "/app/changes",
+      });
+    }
+  }
+}
+
+function notifyDeployment(
+  projectId: string,
+  environment: string,
+  status: string,
+  url?: string,
+  failureMessage?: string,
+): void {
+  const wsId = workspaceOfProject(projectId);
+  if (!wsId) return;
+  if (status === "live") {
+    createNotification({
+      workspaceId: wsId,
+      projectId,
+      kind: "deploy_live",
+      title: `${environment} deploy live`,
+      body: url ?? "Deployment is live.",
+      link: "/app/deployments",
+    });
+  } else if (status === "failed") {
+    createNotification({
+      workspaceId: wsId,
+      projectId,
+      kind: "deploy_failed",
+      title: `${environment} deploy failed`,
+      body: failureMessage ?? "Deploy failed. Previous version still live.",
+      link: "/app/deployments",
+    });
+  }
 }
 
 export function recordDeployment(

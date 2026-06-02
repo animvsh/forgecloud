@@ -42,6 +42,21 @@ import {
 import type { BuildPlan } from "../lib/ai";
 import { log, newRequestId } from "../lib/logger";
 import { clientKey, consume, RATE_CONFIGS, type RateLimitConfig } from "../lib/rate-limit";
+import {
+  archiveBranch,
+  createNotification,
+  listBranches,
+  listCommits,
+  listNotifications,
+  listWorktrees,
+  markAllRead,
+  markNotificationRead,
+  mergeBranch,
+  recordCommit,
+  spawnWorktree,
+  unreadCount,
+} from "../lib/vcs";
+import { getProvider } from "../lib/providers";
 
 const SERVER_STARTED_AT = Date.now();
 const APP_VERSION = process.env.APP_VERSION ?? "0.1.0";
@@ -229,6 +244,31 @@ async function handleGetState(
     .prepare("SELECT * FROM preview_comments WHERE project_id = ? ORDER BY created_at DESC")
     .all(projectId);
 
+  // New vibecoding primitives.
+  const connections = d
+    .prepare("SELECT * FROM connections WHERE workspace_id = ? ORDER BY status DESC, created_at ASC")
+    .all(ids.workspace);
+  const discoveries = d
+    .prepare(
+      "SELECT * FROM discoveries WHERE workspace_id = ? AND (project_id IS NULL OR project_id = ?) ORDER BY created_at ASC",
+    )
+    .all(ids.workspace, projectId);
+  const suggestedApps = d
+    .prepare(
+      "SELECT * FROM suggested_apps WHERE workspace_id = ? AND (project_id IS NULL OR project_id = ?) ORDER BY created_at ASC",
+    )
+    .all(ids.workspace, projectId);
+  const branches = listBranches(projectId);
+  const commits = listCommits(projectId);
+  const worktrees = listWorktrees(projectId);
+  const notifications = listNotifications(ids.workspace, 30);
+  const notificationsUnread = unreadCount(ids.workspace);
+  const allProjects = d
+    .prepare(
+      "SELECT id, name, description, status, created_at FROM projects WHERE workspace_id = ? ORDER BY created_at DESC",
+    )
+    .all(ids.workspace);
+
   sendJson(
     res,
     200,
@@ -236,6 +276,7 @@ async function handleGetState(
       user,
       workspace,
       project,
+      projects: allProjects,
       agents: agentsList,
       tasks,
       prs: prsEnriched,
@@ -245,6 +286,14 @@ async function handleGetState(
       teamMembers,
       chatMessages,
       previewComments,
+      connections,
+      discoveries,
+      suggestedApps,
+      branches,
+      commits,
+      worktrees,
+      notifications,
+      notificationsUnread,
       aiAvailable: isAiAvailable(),
       providerName: activeProviderName(),
       serverVersion: APP_VERSION,
@@ -991,6 +1040,308 @@ async function handleGetAgentRuns(
   sendJson(res, 200, rows, requestId);
 }
 
+// ---------- new vibecoding endpoints ----------------------------------------
+
+// Notifications
+async function handleListNotifications(_req: IncomingMessage, res: ServerResponse, requestId: string) {
+  const rows = listNotifications(ids.workspace, 50);
+  sendJson(res, 200, { notifications: rows, unread: unreadCount(ids.workspace) }, requestId);
+}
+const NotifReadSchema = z.object({ notificationId: z.string().min(1) });
+async function handleMarkNotifRead(req: IncomingMessage, res: ServerResponse, requestId: string) {
+  const parsed = NotifReadSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid payload", requestId, { issues: parsed.error.issues });
+  markNotificationRead(parsed.data.notificationId);
+  sendJson(res, 200, { ok: true, unread: unreadCount(ids.workspace) }, requestId);
+}
+async function handleMarkAllNotifRead(_req: IncomingMessage, res: ServerResponse, requestId: string) {
+  markAllRead(ids.workspace);
+  sendJson(res, 200, { ok: true, unread: 0 }, requestId);
+}
+
+// Branches / commits / worktrees
+async function handleListBranches(_req: IncomingMessage, res: ServerResponse, requestId: string) {
+  const projectId = await getCurrentProjectId();
+  sendJson(res, 200, listBranches(projectId), requestId);
+}
+async function handleListCommits(req: IncomingMessage, res: ServerResponse, requestId: string) {
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const branchId = url.searchParams.get("branchId") ?? undefined;
+  const projectId = await getCurrentProjectId();
+  sendJson(res, 200, listCommits(projectId, branchId), requestId);
+}
+const MergeSchema = z.object({ branchId: z.string().min(1) });
+async function handleMergeBranch(req: IncomingMessage, res: ServerResponse, requestId: string) {
+  const parsed = MergeSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid payload", requestId, { issues: parsed.error.issues });
+  const branch = mergeBranch(parsed.data.branchId);
+  if (!branch) return sendError(res, 404, "Branch not found", requestId);
+  const projectId = await getCurrentProjectId();
+  recordCommit({
+    projectId,
+    branchId: branch.id,
+    prId: branch.head_pr_id,
+    message: `Merged ${branch.name} into ${branch.base_branch}`,
+    author: "Sal",
+    filesChanged: 0,
+  });
+  const wsRow = getDb()
+    .prepare("SELECT workspace_id FROM projects WHERE id = ?")
+    .get(projectId) as { workspace_id: string } | undefined;
+  if (wsRow) {
+    createNotification({
+      workspaceId: wsRow.workspace_id,
+      projectId,
+      kind: "pr_approved",
+      title: `Branch merged: ${branch.name}`,
+      body: `Now part of ${branch.base_branch}.`,
+      link: "/app/branches",
+    });
+  }
+  sendJson(res, 200, { ok: true, branch }, requestId);
+}
+async function handleArchiveBranch(req: IncomingMessage, res: ServerResponse, requestId: string) {
+  const parsed = MergeSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid payload", requestId, { issues: parsed.error.issues });
+  const branch = archiveBranch(parsed.data.branchId);
+  sendJson(res, 200, { ok: true, branch }, requestId);
+}
+async function handleListWorktrees(_req: IncomingMessage, res: ServerResponse, requestId: string) {
+  const projectId = await getCurrentProjectId();
+  sendJson(res, 200, listWorktrees(projectId), requestId);
+}
+const SpawnWtSchema = z.object({ branchId: z.string().min(1).optional(), name: z.string().min(1).max(80) });
+async function handleSpawnWorktree(req: IncomingMessage, res: ServerResponse, requestId: string) {
+  const parsed = SpawnWtSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid payload", requestId, { issues: parsed.error.issues });
+  const projectId = await getCurrentProjectId();
+  const wt = spawnWorktree({
+    projectId,
+    branchId: parsed.data.branchId ?? null,
+    name: parsed.data.name,
+    previewUrl: `https://wt-${Math.random().toString(36).slice(2, 6)}.forgecloud.dev`,
+  });
+  sendJson(res, 200, { ok: true, worktree: wt }, requestId);
+}
+
+// Connections / discoveries / suggested apps
+async function handleListConnections(_req: IncomingMessage, res: ServerResponse, requestId: string) {
+  const d = getDb();
+  sendJson(res, 200, d.prepare("SELECT * FROM connections WHERE workspace_id = ?").all(ids.workspace), requestId);
+}
+const ConnectSchema = z.object({ provider: z.string().min(1), account: z.string().max(120).optional() });
+async function handleConnectTool(req: IncomingMessage, res: ServerResponse, requestId: string) {
+  const parsed = ConnectSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid payload", requestId, { issues: parsed.error.issues });
+  const d = getDb();
+  const row = d
+    .prepare("SELECT * FROM connections WHERE workspace_id = ? AND provider = ?")
+    .get(ids.workspace, parsed.data.provider) as { id: string } | undefined;
+  if (!row) return sendError(res, 404, "Connector not found", requestId);
+  d.prepare(
+    "UPDATE connections SET status = 'connected', account_label = ?, connected_at = ? WHERE id = ?",
+  ).run(parsed.data.account ?? "Connected", Date.now(), row.id);
+  createNotification({
+    workspaceId: ids.workspace,
+    projectId: await getCurrentProjectId(),
+    kind: "system",
+    title: `${parsed.data.provider} connected`,
+    body: parsed.data.account ?? "Account linked.",
+    link: "/app/connect",
+  });
+  sendJson(res, 200, { ok: true, connection: d.prepare("SELECT * FROM connections WHERE id = ?").get(row.id) }, requestId);
+}
+async function handleDisconnectTool(req: IncomingMessage, res: ServerResponse, requestId: string) {
+  const parsed = ConnectSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid payload", requestId, { issues: parsed.error.issues });
+  const d = getDb();
+  d.prepare(
+    "UPDATE connections SET status = 'available', account_label = NULL, connected_at = NULL WHERE workspace_id = ? AND provider = ?",
+  ).run(ids.workspace, parsed.data.provider);
+  sendJson(res, 200, { ok: true }, requestId);
+}
+async function handleScanConnections(_req: IncomingMessage, res: ServerResponse, requestId: string) {
+  // No-op scan that just returns the seeded discoveries (already inserted by seed).
+  const d = getDb();
+  const projectId = await getCurrentProjectId();
+  const rows = d
+    .prepare(
+      "SELECT * FROM discoveries WHERE workspace_id = ? AND (project_id IS NULL OR project_id = ?) ORDER BY created_at ASC",
+    )
+    .all(ids.workspace, projectId);
+  sendJson(res, 200, { discoveries: rows }, requestId);
+}
+async function handleListSuggested(_req: IncomingMessage, res: ServerResponse, requestId: string) {
+  const d = getDb();
+  const projectId = await getCurrentProjectId();
+  const rows = d
+    .prepare(
+      "SELECT * FROM suggested_apps WHERE workspace_id = ? AND (project_id IS NULL OR project_id = ?) ORDER BY created_at ASC",
+    )
+    .all(ids.workspace, projectId);
+  sendJson(res, 200, { suggestedApps: rows }, requestId);
+}
+const BuildAppSchema = z.object({ appId: z.string().min(1) });
+async function handleBuildSuggestedApp(req: IncomingMessage, res: ServerResponse, requestId: string) {
+  const parsed = BuildAppSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid payload", requestId, { issues: parsed.error.issues });
+  const d = getDb();
+  const app = d
+    .prepare("SELECT * FROM suggested_apps WHERE id = ?")
+    .get(parsed.data.appId) as { title: string; description: string; sample_features: string } | undefined;
+  if (!app) return sendError(res, 404, "App not found", requestId);
+  const projectId = await getCurrentProjectId();
+  d.prepare("UPDATE projects SET name = ?, description = ?, status = 'planning' WHERE id = ?").run(
+    app.title,
+    app.description,
+    projectId,
+  );
+  // Spawn tasks from sample_features.
+  const features = JSON.parse(app.sample_features) as string[];
+  const tasks = createTasksFromPlan(
+    projectId,
+    {
+      features: features.map((title, i) => ({
+        title,
+        description: `${title} for ${app.title}`,
+        ownerAgent: i % 2 === 0 ? "Frontend Agent" : "Backend Agent",
+        riskLevel: "low" as const,
+        estimatedFiles: 3,
+      })),
+    },
+    ["Sal", "Marco"],
+  );
+  d.prepare(
+    `INSERT INTO chat_messages (id, project_id, role, content, metadata) VALUES (?, ?, 'assistant', ?, ?)`,
+  ).run(
+    ids.newMessage(),
+    projectId,
+    `Starting build for ${app.title}. ${tasks.length} tasks queued.`,
+    JSON.stringify({ kind: "task_created", taskIds: tasks.map((t) => t.id) }),
+  );
+  sendJson(res, 200, { ok: true, project: getProject(projectId), tasks }, requestId);
+}
+
+// Manual task creation
+const AddTaskSchema = z.object({
+  title: z.string().min(1).max(120),
+  description: z.string().max(800).optional(),
+  ownerAgent: z.string().min(1).max(60).optional(),
+  riskLevel: z.enum(["low", "med", "high"]).optional(),
+  reviewer: z.string().max(60).optional(),
+});
+async function handleAddTask(req: IncomingMessage, res: ServerResponse, requestId: string) {
+  const parsed = AddTaskSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid payload", requestId, { issues: parsed.error.issues });
+  const projectId = await getCurrentProjectId();
+  const tasks = createTasksFromPlan(
+    projectId,
+    {
+      features: [
+        {
+          title: parsed.data.title,
+          description: parsed.data.description ?? "",
+          ownerAgent: parsed.data.ownerAgent ?? "Frontend Agent",
+          riskLevel: parsed.data.riskLevel ?? "low",
+          estimatedFiles: 3,
+        },
+      ],
+    },
+    parsed.data.reviewer ?? "Sal",
+  );
+  createNotification({
+    workspaceId: ids.workspace,
+    projectId,
+    kind: "task_created",
+    title: `New task: ${parsed.data.title}`,
+    body: parsed.data.description ?? "",
+    link: "/app/tasks",
+  });
+  sendJson(res, 200, { ok: true, task: tasks[0] }, requestId);
+}
+
+// Plain-English Blame
+const BlameSchema = z.object({
+  selector: z.string().max(200).optional(),
+  label: z.string().min(1).max(200),
+});
+async function handleBlame(req: IncomingMessage, res: ServerResponse, requestId: string) {
+  const parsed = BlameSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid payload", requestId, { issues: parsed.error.issues });
+  const projectId = await getCurrentProjectId();
+  const d = getDb();
+  // Find the most relevant PR/change by fuzzy match on the label or selector.
+  // Token-based fuzzy search: try the full label first, then each word > 3 chars.
+  const tokens = [parsed.data.label.toLowerCase(), ...parsed.data.label
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length > 3)];
+  const stmt = d.prepare(
+    `SELECT c.*, p.number AS pr_number, p.title AS pr_title, p.summary AS pr_summary, a.name AS agent_name
+       FROM changes c
+       LEFT JOIN pull_requests p ON p.id = c.pr_id
+       LEFT JOIN agents a ON a.id = c.agent_id
+       WHERE p.project_id = ?
+         AND (LOWER(c.plain_english_summary) LIKE ? OR LOWER(c.file_path) LIKE ? OR LOWER(p.title) LIKE ? OR LOWER(p.summary) LIKE ?)
+       ORDER BY p.created_at DESC LIMIT 1`,
+  );
+  let change: any;
+  for (const tok of tokens) {
+    const needle = `%${tok}%`;
+    change = stmt.get(projectId, needle, needle, needle, needle);
+    if (change) break;
+  }
+  change = change as
+    | { pr_number: number; pr_title: string; pr_summary: string; agent_name: string; plain_english_summary: string }
+    | undefined;
+
+  const provider = getProvider();
+  if (!change) {
+    const reply = `Couldn't find a specific change tied to "${parsed.data.label}". The whole dashboard was built across PRs #1 through #5 by Product, Design, Frontend, Backend, QA, Safety, and DevOps Agents.`;
+    return sendJson(res, 200, { explanation: reply, provider: provider?.name ?? "Fallback" }, requestId);
+  }
+  const promptCtx = `User clicked: "${parsed.data.label}"\nMatched PR #${change.pr_number}: ${change.pr_title}\nPR summary: ${change.pr_summary}\nChange summary: ${change.plain_english_summary}\nAgent who built it: ${change.agent_name}`;
+  let reply: string;
+  if (!provider) {
+    reply = `${change.plain_english_summary} Built by ${change.agent_name} in PR #${change.pr_number} (${change.pr_title}).`;
+  } else {
+    try {
+      reply = await provider.complete({
+        system:
+          "You are explaining who changed what and why for a non-technical business owner. 2-3 short sentences. No markdown. Reference the PR number and the agent name.",
+        messages: [{ role: "user", content: promptCtx }],
+        maxTokens: 180,
+        intent: "explain",
+      });
+    } catch {
+      reply = `${change.plain_english_summary} Built by ${change.agent_name} in PR #${change.pr_number}.`;
+    }
+  }
+  sendJson(res, 200, { explanation: reply, provider: provider?.name ?? "Fallback", prNumber: change.pr_number }, requestId);
+}
+
+// Multi-project
+const NewProjectSchema = z.object({ name: z.string().min(1).max(120), description: z.string().max(500).optional() });
+async function handleNewProject(req: IncomingMessage, res: ServerResponse, requestId: string) {
+  const parsed = NewProjectSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) return sendError(res, 400, "Invalid payload", requestId, { issues: parsed.error.issues });
+  const d = getDb();
+  const id = ids.newProject();
+  d.prepare(
+    `INSERT INTO projects (id, workspace_id, name, description, status) VALUES (?, ?, ?, ?, 'intake')`,
+  ).run(id, ids.workspace, parsed.data.name, parsed.data.description ?? null);
+  createAgentsForProject(id);
+  createNotification({
+    workspaceId: ids.workspace,
+    projectId: id,
+    kind: "system",
+    title: `New project: ${parsed.data.name}`,
+    body: parsed.data.description ?? "Workspace ready.",
+    link: "/app/intake",
+  });
+  sendJson(res, 200, { ok: true, project: getProject(id) }, requestId);
+}
+
 // ---------- router ----------------------------------------------------------
 
 type RouteHandler = (req: IncomingMessage, res: ServerResponse, requestId: string) => Promise<void>;
@@ -1115,6 +1466,30 @@ const ROUTES: Array<{
     handler: handleComment,
     rate: RATE_CONFIGS.expensive,
   },
+  // Notifications
+  { method: "GET", pattern: /^\/api\/notifications$/, handler: handleListNotifications, rate: RATE_CONFIGS.cheap },
+  { method: "POST", pattern: /^\/api\/notifications\/read$/, handler: handleMarkNotifRead, rate: RATE_CONFIGS.cheap },
+  { method: "POST", pattern: /^\/api\/notifications\/read-all$/, handler: handleMarkAllNotifRead, rate: RATE_CONFIGS.cheap },
+  // Branches / commits / worktrees
+  { method: "GET", pattern: /^\/api\/branches$/, handler: handleListBranches, rate: RATE_CONFIGS.cheap },
+  { method: "GET", pattern: /^\/api\/commits$/, handler: handleListCommits, rate: RATE_CONFIGS.cheap },
+  { method: "POST", pattern: /^\/api\/branches\/merge$/, handler: handleMergeBranch, rate: RATE_CONFIGS.cheap },
+  { method: "POST", pattern: /^\/api\/branches\/archive$/, handler: handleArchiveBranch, rate: RATE_CONFIGS.cheap },
+  { method: "GET", pattern: /^\/api\/worktrees$/, handler: handleListWorktrees, rate: RATE_CONFIGS.cheap },
+  { method: "POST", pattern: /^\/api\/worktrees$/, handler: handleSpawnWorktree, rate: RATE_CONFIGS.cheap },
+  // Connections + discoveries + suggestions
+  { method: "GET", pattern: /^\/api\/connections$/, handler: handleListConnections, rate: RATE_CONFIGS.cheap },
+  { method: "POST", pattern: /^\/api\/connect$/, handler: handleConnectTool, rate: RATE_CONFIGS.cheap },
+  { method: "POST", pattern: /^\/api\/disconnect$/, handler: handleDisconnectTool, rate: RATE_CONFIGS.cheap },
+  { method: "POST", pattern: /^\/api\/scan$/, handler: handleScanConnections, rate: RATE_CONFIGS.cheap },
+  { method: "GET", pattern: /^\/api\/suggested-apps$/, handler: handleListSuggested, rate: RATE_CONFIGS.cheap },
+  { method: "POST", pattern: /^\/api\/build-app$/, handler: handleBuildSuggestedApp, rate: RATE_CONFIGS.expensive },
+  // Manual task add
+  { method: "POST", pattern: /^\/api\/add-task$/, handler: handleAddTask, rate: RATE_CONFIGS.cheap },
+  // Plain-English Blame
+  { method: "POST", pattern: /^\/api\/blame$/, handler: handleBlame, rate: RATE_CONFIGS.expensive },
+  // Multi-project
+  { method: "POST", pattern: /^\/api\/projects$/, handler: handleNewProject, rate: RATE_CONFIGS.cheap },
 ];
 
 export async function handleApiRequest(

@@ -8,10 +8,12 @@ import {
   ExternalLink,
   MousePointerClick,
   X,
+  HelpCircle,
+  Sparkles,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useForgeState, useAddComment, useDeploy } from "@/lib/client";
+import { useForgeState, useAddComment, useDeploy, useBlame } from "@/lib/client";
 
 export const Route = createFileRoute("/app/preview")({
   component: PreviewScreen,
@@ -27,22 +29,60 @@ type PreviewClickMessage = {
   y: number;
 };
 
+type PreviewBlameMessage = {
+  kind: "preview-blame";
+  text: string;
+  selector: string;
+  x: number;
+  y: number;
+};
+
 function isPreviewClickMessage(value: unknown): value is PreviewClickMessage {
   if (!value || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
   return v.kind === "preview-click" && typeof v.text === "string" && typeof v.selector === "string";
 }
 
+function isPreviewBlameMessage(value: unknown): value is PreviewBlameMessage {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return v.kind === "preview-blame" && typeof v.text === "string" && typeof v.selector === "string";
+}
+
 function PreviewScreen() {
   const { data, isLoading } = useForgeState();
   const addComment = useAddComment();
   const deploy = useDeploy();
+  const blame = useBlame();
   const [text, setText] = useState("");
   const [selector, setSelector] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [commentMode, setCommentMode] = useState(false);
+  const [blameMode, setBlameMode] = useState(false);
+  const [blameOpen, setBlameOpen] = useState(false);
+  const [blameLabel, setBlameLabel] = useState<string>("");
+  const [blameLoading, setBlameLoading] = useState(false);
+  const [blameText, setBlameText] = useState<string>("");
+  const [blameProvider, setBlameProvider] = useState<string>("");
+  const [blamePrNumber, setBlamePrNumber] = useState<number | undefined>(undefined);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Mutually exclusive toggles.
+  function toggleCommentMode() {
+    setCommentMode((v) => {
+      const next = !v;
+      if (next) setBlameMode(false);
+      return next;
+    });
+  }
+  function toggleBlameMode() {
+    setBlameMode((v) => {
+      const next = !v;
+      if (next) setCommentMode(false);
+      return next;
+    });
+  }
 
   // Push comment-mode state into the iframe whenever it (or the iframe) changes.
   useEffect(() => {
@@ -51,29 +91,63 @@ function PreviewScreen() {
     function send() {
       iframe?.contentWindow?.postMessage({ kind: "set-comment-mode", enabled: commentMode }, "*");
     }
-    // Send immediately and again on load (the iframe may not be ready yet).
     send();
     iframe.addEventListener("load", send);
     return () => iframe.removeEventListener("load", send);
   }, [commentMode]);
 
+  // Push blame-mode state into the iframe.
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+    function send() {
+      iframe?.contentWindow?.postMessage({ kind: "set-blame-mode", enabled: blameMode }, "*");
+    }
+    send();
+    iframe.addEventListener("load", send);
+    return () => iframe.removeEventListener("load", send);
+  }, [blameMode]);
+
   // Listen for clicks bubbling out of the iframe.
   useEffect(() => {
-    function onMessage(event: MessageEvent) {
+    async function onMessage(event: MessageEvent) {
       if (event.source !== iframeRef.current?.contentWindow) return;
-      if (!isPreviewClickMessage(event.data)) return;
-      const { text: clickedText, selector: clickedSelector } = event.data;
-      setSelector(clickedSelector);
-      setText((prev) => {
-        // Prefill with clicked text if the user hasn't typed anything custom.
-        if (!prev.trim()) return clickedText;
-        return prev;
-      });
-      // Focus the textarea so the user can keep typing.
-      requestAnimationFrame(() => textareaRef.current?.focus());
+      if (isPreviewClickMessage(event.data)) {
+        const { text: clickedText, selector: clickedSelector } = event.data;
+        setSelector(clickedSelector);
+        setText((prev) => {
+          if (!prev.trim()) return clickedText;
+          return prev;
+        });
+        requestAnimationFrame(() => textareaRef.current?.focus());
+        return;
+      }
+      if (isPreviewBlameMessage(event.data)) {
+        const { text: clickedText, selector: clickedSelector } = event.data;
+        setBlameLabel(clickedText || clickedSelector);
+        setBlameText("");
+        setBlameProvider("");
+        setBlamePrNumber(undefined);
+        setBlameOpen(true);
+        setBlameLoading(true);
+        try {
+          const res = await blame.mutateAsync({
+            selector: clickedSelector,
+            label: clickedText || clickedSelector,
+          });
+          setBlameText(res.explanation);
+          setBlameProvider(res.provider);
+          setBlamePrNumber(res.prNumber);
+        } catch (err) {
+          setBlameText(`Couldn't load explanation: ${(err as Error).message}`);
+        } finally {
+          setBlameLoading(false);
+        }
+      }
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (isLoading || !data) {
@@ -131,7 +205,7 @@ function PreviewScreen() {
         action={
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setCommentMode((v) => !v)}
+              onClick={toggleCommentMode}
               className={
                 "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition " +
                 (commentMode
@@ -141,6 +215,18 @@ function PreviewScreen() {
             >
               <MousePointerClick className="size-3" />
               {commentMode ? "Comment mode: on" : "Comment mode"}
+            </button>
+            <button
+              onClick={toggleBlameMode}
+              className={
+                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition " +
+                (blameMode
+                  ? "bg-violet text-white shadow-sm hover:brightness-105"
+                  : "border border-border bg-card hover:bg-muted")
+              }
+            >
+              <HelpCircle className="size-3" />
+              {blameMode ? "Blame mode: on" : "Blame mode"}
             </button>
             <a
               href={DEMO_PREVIEW_PATH}
@@ -182,6 +268,12 @@ function PreviewScreen() {
                 <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-coral">
                   <MousePointerClick className="size-3" />
                   Comment mode
+                </div>
+              )}
+              {blameMode && (
+                <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-violet">
+                  <HelpCircle className="size-3" />
+                  Blame mode
                 </div>
               )}
               {liveDeployment && (
@@ -285,6 +377,64 @@ function PreviewScreen() {
             </div>
           </div>
         </div>
+      </div>
+
+      {blameOpen && (
+        <BlameModal onClose={() => setBlameOpen(false)}>
+          <div className="flex items-center gap-2">
+            <Sparkles className="size-4 text-violet" />
+            <h3 className="text-lg font-semibold">Plain-English blame</h3>
+          </div>
+          {blameLabel && (
+            <p className="mt-1 truncate text-xs text-muted-foreground" title={blameLabel}>
+              "{blameLabel}"
+            </p>
+          )}
+          <div className="mt-4 max-h-[50vh] overflow-y-auto rounded-2xl border border-border bg-background p-4 text-sm leading-relaxed text-foreground/90">
+            {blameLoading ? (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                Looking up who added this and why…
+              </div>
+            ) : (
+              <div className="whitespace-pre-wrap">{blameText}</div>
+            )}
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              {blamePrNumber !== undefined && !blameLoading && (
+                <span className="rounded-full bg-violet/15 px-2.5 py-1 text-[10px] font-semibold uppercase text-violet">
+                  PR #{blamePrNumber}
+                </span>
+              )}
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                {blameProvider && !blameLoading ? `via ${blameProvider}` : ""}
+              </span>
+            </div>
+            <button
+              onClick={() => setBlameOpen(false)}
+              className="rounded-full border border-border px-4 py-1.5 text-xs hover:bg-muted"
+            >
+              Close
+            </button>
+          </div>
+        </BlameModal>
+      )}
+    </div>
+  );
+}
+
+function BlameModal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 px-4"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[85vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-border bg-card p-6 text-left shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
       </div>
     </div>
   );

@@ -218,11 +218,107 @@ function initSchema(db: Database.Database) {
       FOREIGN KEY (project_id) REFERENCES projects(id)
     );
 
+    CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      project_id TEXT,
+      user_id TEXT,
+      kind TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT,
+      link TEXT,
+      read_at INTEGER,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS branches (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      base_branch TEXT NOT NULL DEFAULT 'main',
+      head_pr_id TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_by_agent_id TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+      merged_at INTEGER,
+      FOREIGN KEY (project_id) REFERENCES projects(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS commits (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      branch_id TEXT,
+      pr_id TEXT,
+      sha TEXT NOT NULL,
+      message TEXT NOT NULL,
+      author TEXT NOT NULL,
+      files_changed INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+      FOREIGN KEY (project_id) REFERENCES projects(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS worktrees (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      branch_id TEXT,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      assigned_agent_id TEXT,
+      preview_url TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+      FOREIGN KEY (project_id) REFERENCES projects(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS connections (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      label TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'available',
+      account_label TEXT,
+      icon TEXT,
+      connected_at INTEGER,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS discoveries (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      project_id TEXT,
+      connection_id TEXT,
+      provider TEXT NOT NULL,
+      label TEXT NOT NULL,
+      detail TEXT,
+      count INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS suggested_apps (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      project_id TEXT,
+      slug TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      icon TEXT,
+      uses_connections TEXT NOT NULL DEFAULT '[]',
+      sample_features TEXT NOT NULL DEFAULT '[]',
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
     CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project_id);
     CREATE INDEX IF NOT EXISTS idx_prs_project ON pull_requests(project_id);
     CREATE INDEX IF NOT EXISTS idx_recovery_project ON recovery_events(project_id);
     CREATE INDEX IF NOT EXISTS idx_chat_project ON chat_messages(project_id);
+    CREATE INDEX IF NOT EXISTS idx_notifications_ws ON notifications(workspace_id, read_at);
+    CREATE INDEX IF NOT EXISTS idx_branches_project ON branches(project_id, status);
+    CREATE INDEX IF NOT EXISTS idx_commits_branch ON commits(branch_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_worktrees_project ON worktrees(project_id, status);
   `);
 }
 
@@ -397,5 +493,90 @@ export type PreviewComment = {
   selector: string | null;
   text: string;
   status: string;
+  created_at: number;
+};
+
+export type Notification = {
+  id: string;
+  workspace_id: string;
+  project_id: string | null;
+  user_id: string | null;
+  kind: string;
+  title: string;
+  body: string | null;
+  link: string | null;
+  read_at: number | null;
+  created_at: number;
+};
+
+export type Branch = {
+  id: string;
+  project_id: string;
+  name: string;
+  base_branch: string;
+  head_pr_id: string | null;
+  status: string;
+  created_by_agent_id: string | null;
+  created_at: number;
+  merged_at: number | null;
+};
+
+export type Commit = {
+  id: string;
+  project_id: string;
+  branch_id: string | null;
+  pr_id: string | null;
+  sha: string;
+  message: string;
+  author: string;
+  files_changed: number;
+  created_at: number;
+};
+
+export type Worktree = {
+  id: string;
+  project_id: string;
+  branch_id: string | null;
+  name: string;
+  status: string;
+  assigned_agent_id: string | null;
+  preview_url: string | null;
+  created_at: number;
+};
+
+export type Connection = {
+  id: string;
+  workspace_id: string;
+  provider: string;
+  label: string;
+  status: string; // 'available' | 'connected' | 'error'
+  account_label: string | null;
+  icon: string | null;
+  connected_at: number | null;
+  created_at: number;
+};
+
+export type Discovery = {
+  id: string;
+  workspace_id: string;
+  project_id: string | null;
+  connection_id: string | null;
+  provider: string;
+  label: string;
+  detail: string | null;
+  count: number;
+  created_at: number;
+};
+
+export type SuggestedApp = {
+  id: string;
+  workspace_id: string;
+  project_id: string | null;
+  slug: string;
+  title: string;
+  description: string;
+  icon: string | null;
+  uses_connections: string; // JSON array of provider strings
+  sample_features: string; // JSON array of strings
   created_at: number;
 };

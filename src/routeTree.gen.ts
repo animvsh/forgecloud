@@ -15,14 +15,18 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as AppTeamRouteImport } from './routes/app.team'
 import { Route as AppTasksRouteImport } from './routes/app.tasks'
+import { Route as AppSuggestedAppsRouteImport } from './routes/app.suggested-apps'
 import { Route as AppSettingsRouteImport } from './routes/app.settings'
 import { Route as AppReportRouteImport } from './routes/app.report'
 import { Route as AppPreviewRouteImport } from './routes/app.preview'
 import { Route as AppIntakeRouteImport } from './routes/app.intake'
 import { Route as AppFailuresRouteImport } from './routes/app.failures'
+import { Route as AppDiscoveriesRouteImport } from './routes/app.discoveries'
 import { Route as AppDeploymentsRouteImport } from './routes/app.deployments'
+import { Route as AppConnectRouteImport } from './routes/app.connect'
 import { Route as AppChatRouteImport } from './routes/app.chat'
 import { Route as AppChangesRouteImport } from './routes/app.changes'
+import { Route as AppBranchesRouteImport } from './routes/app.branches'
 import { Route as AppAgentsRouteImport } from './routes/app.agents'
 import { Route as AppAgentsAgentIdRouteImport } from './routes/app.agents.$agentId'
 
@@ -56,6 +60,11 @@ const AppTasksRoute = AppTasksRouteImport.update({
   path: '/tasks',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSuggestedAppsRoute = AppSuggestedAppsRouteImport.update({
+  id: '/suggested-apps',
+  path: '/suggested-apps',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -81,9 +90,19 @@ const AppFailuresRoute = AppFailuresRouteImport.update({
   path: '/failures',
   getParentRoute: () => AppRoute,
 } as any)
+const AppDiscoveriesRoute = AppDiscoveriesRouteImport.update({
+  id: '/discoveries',
+  path: '/discoveries',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppDeploymentsRoute = AppDeploymentsRouteImport.update({
   id: '/deployments',
   path: '/deployments',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppConnectRoute = AppConnectRouteImport.update({
+  id: '/connect',
+  path: '/connect',
   getParentRoute: () => AppRoute,
 } as any)
 const AppChatRoute = AppChatRouteImport.update({
@@ -94,6 +113,11 @@ const AppChatRoute = AppChatRouteImport.update({
 const AppChangesRoute = AppChangesRouteImport.update({
   id: '/changes',
   path: '/changes',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppBranchesRoute = AppBranchesRouteImport.update({
+  id: '/branches',
+  path: '/branches',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAgentsRoute = AppAgentsRouteImport.update({
@@ -112,14 +136,18 @@ export interface FileRoutesByFullPath {
   '/app': typeof AppRouteWithChildren
   '/demo-preview': typeof DemoPreviewRoute
   '/app/agents': typeof AppAgentsRouteWithChildren
+  '/app/branches': typeof AppBranchesRoute
   '/app/changes': typeof AppChangesRoute
   '/app/chat': typeof AppChatRoute
+  '/app/connect': typeof AppConnectRoute
   '/app/deployments': typeof AppDeploymentsRoute
+  '/app/discoveries': typeof AppDiscoveriesRoute
   '/app/failures': typeof AppFailuresRoute
   '/app/intake': typeof AppIntakeRoute
   '/app/preview': typeof AppPreviewRoute
   '/app/report': typeof AppReportRoute
   '/app/settings': typeof AppSettingsRoute
+  '/app/suggested-apps': typeof AppSuggestedAppsRoute
   '/app/tasks': typeof AppTasksRoute
   '/app/team': typeof AppTeamRoute
   '/app/': typeof AppIndexRoute
@@ -129,14 +157,18 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/demo-preview': typeof DemoPreviewRoute
   '/app/agents': typeof AppAgentsRouteWithChildren
+  '/app/branches': typeof AppBranchesRoute
   '/app/changes': typeof AppChangesRoute
   '/app/chat': typeof AppChatRoute
+  '/app/connect': typeof AppConnectRoute
   '/app/deployments': typeof AppDeploymentsRoute
+  '/app/discoveries': typeof AppDiscoveriesRoute
   '/app/failures': typeof AppFailuresRoute
   '/app/intake': typeof AppIntakeRoute
   '/app/preview': typeof AppPreviewRoute
   '/app/report': typeof AppReportRoute
   '/app/settings': typeof AppSettingsRoute
+  '/app/suggested-apps': typeof AppSuggestedAppsRoute
   '/app/tasks': typeof AppTasksRoute
   '/app/team': typeof AppTeamRoute
   '/app': typeof AppIndexRoute
@@ -148,14 +180,18 @@ export interface FileRoutesById {
   '/app': typeof AppRouteWithChildren
   '/demo-preview': typeof DemoPreviewRoute
   '/app/agents': typeof AppAgentsRouteWithChildren
+  '/app/branches': typeof AppBranchesRoute
   '/app/changes': typeof AppChangesRoute
   '/app/chat': typeof AppChatRoute
+  '/app/connect': typeof AppConnectRoute
   '/app/deployments': typeof AppDeploymentsRoute
+  '/app/discoveries': typeof AppDiscoveriesRoute
   '/app/failures': typeof AppFailuresRoute
   '/app/intake': typeof AppIntakeRoute
   '/app/preview': typeof AppPreviewRoute
   '/app/report': typeof AppReportRoute
   '/app/settings': typeof AppSettingsRoute
+  '/app/suggested-apps': typeof AppSuggestedAppsRoute
   '/app/tasks': typeof AppTasksRoute
   '/app/team': typeof AppTeamRoute
   '/app/': typeof AppIndexRoute
@@ -168,14 +204,18 @@ export interface FileRouteTypes {
     | '/app'
     | '/demo-preview'
     | '/app/agents'
+    | '/app/branches'
     | '/app/changes'
     | '/app/chat'
+    | '/app/connect'
     | '/app/deployments'
+    | '/app/discoveries'
     | '/app/failures'
     | '/app/intake'
     | '/app/preview'
     | '/app/report'
     | '/app/settings'
+    | '/app/suggested-apps'
     | '/app/tasks'
     | '/app/team'
     | '/app/'
@@ -185,14 +225,18 @@ export interface FileRouteTypes {
     | '/'
     | '/demo-preview'
     | '/app/agents'
+    | '/app/branches'
     | '/app/changes'
     | '/app/chat'
+    | '/app/connect'
     | '/app/deployments'
+    | '/app/discoveries'
     | '/app/failures'
     | '/app/intake'
     | '/app/preview'
     | '/app/report'
     | '/app/settings'
+    | '/app/suggested-apps'
     | '/app/tasks'
     | '/app/team'
     | '/app'
@@ -203,14 +247,18 @@ export interface FileRouteTypes {
     | '/app'
     | '/demo-preview'
     | '/app/agents'
+    | '/app/branches'
     | '/app/changes'
     | '/app/chat'
+    | '/app/connect'
     | '/app/deployments'
+    | '/app/discoveries'
     | '/app/failures'
     | '/app/intake'
     | '/app/preview'
     | '/app/report'
     | '/app/settings'
+    | '/app/suggested-apps'
     | '/app/tasks'
     | '/app/team'
     | '/app/'
@@ -267,6 +315,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTasksRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/suggested-apps': {
+      id: '/app/suggested-apps'
+      path: '/suggested-apps'
+      fullPath: '/app/suggested-apps'
+      preLoaderRoute: typeof AppSuggestedAppsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/settings': {
       id: '/app/settings'
       path: '/settings'
@@ -302,11 +357,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppFailuresRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/discoveries': {
+      id: '/app/discoveries'
+      path: '/discoveries'
+      fullPath: '/app/discoveries'
+      preLoaderRoute: typeof AppDiscoveriesRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/deployments': {
       id: '/app/deployments'
       path: '/deployments'
       fullPath: '/app/deployments'
       preLoaderRoute: typeof AppDeploymentsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/connect': {
+      id: '/app/connect'
+      path: '/connect'
+      fullPath: '/app/connect'
+      preLoaderRoute: typeof AppConnectRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/chat': {
@@ -321,6 +390,13 @@ declare module '@tanstack/react-router' {
       path: '/changes'
       fullPath: '/app/changes'
       preLoaderRoute: typeof AppChangesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/branches': {
+      id: '/app/branches'
+      path: '/branches'
+      fullPath: '/app/branches'
+      preLoaderRoute: typeof AppBranchesRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/agents': {
@@ -354,14 +430,18 @@ const AppAgentsRouteWithChildren = AppAgentsRoute._addFileChildren(
 
 interface AppRouteChildren {
   AppAgentsRoute: typeof AppAgentsRouteWithChildren
+  AppBranchesRoute: typeof AppBranchesRoute
   AppChangesRoute: typeof AppChangesRoute
   AppChatRoute: typeof AppChatRoute
+  AppConnectRoute: typeof AppConnectRoute
   AppDeploymentsRoute: typeof AppDeploymentsRoute
+  AppDiscoveriesRoute: typeof AppDiscoveriesRoute
   AppFailuresRoute: typeof AppFailuresRoute
   AppIntakeRoute: typeof AppIntakeRoute
   AppPreviewRoute: typeof AppPreviewRoute
   AppReportRoute: typeof AppReportRoute
   AppSettingsRoute: typeof AppSettingsRoute
+  AppSuggestedAppsRoute: typeof AppSuggestedAppsRoute
   AppTasksRoute: typeof AppTasksRoute
   AppTeamRoute: typeof AppTeamRoute
   AppIndexRoute: typeof AppIndexRoute
@@ -369,14 +449,18 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppAgentsRoute: AppAgentsRouteWithChildren,
+  AppBranchesRoute: AppBranchesRoute,
   AppChangesRoute: AppChangesRoute,
   AppChatRoute: AppChatRoute,
+  AppConnectRoute: AppConnectRoute,
   AppDeploymentsRoute: AppDeploymentsRoute,
+  AppDiscoveriesRoute: AppDiscoveriesRoute,
   AppFailuresRoute: AppFailuresRoute,
   AppIntakeRoute: AppIntakeRoute,
   AppPreviewRoute: AppPreviewRoute,
   AppReportRoute: AppReportRoute,
   AppSettingsRoute: AppSettingsRoute,
+  AppSuggestedAppsRoute: AppSuggestedAppsRoute,
   AppTasksRoute: AppTasksRoute,
   AppTeamRoute: AppTeamRoute,
   AppIndexRoute: AppIndexRoute,

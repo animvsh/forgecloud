@@ -4,7 +4,8 @@ import { getProvider } from "./providers";
 
 const DEFAULT_USER_ID = "user-animesh";
 const DEFAULT_WORKSPACE_ID = "ws-default";
-const DEMO_PROJECT_ID = "proj-pielot-waitlist";
+// Demo project ID kept as a constant; the project title is "Pleasure Pizza Ops".
+const DEMO_PROJECT_ID = "proj-pleasure-pizza";
 
 const SEED_PRIMARY_MODEL = getProvider()?.primaryModel ?? "MiniMax-Text-01";
 const SEED_FALLBACK_MODEL = getProvider()?.fallbackModel ?? "MiniMax-M1";
@@ -29,13 +30,9 @@ export function ensureSeed(): { user: User; workspace: Workspace } {
     .prepare("SELECT * FROM users WHERE id = ?")
     .get(DEFAULT_USER_ID) as User | undefined;
   if (existingUser) {
-    // Re-seed the demo project if it was deleted (e.g. after a reset)
-    const demoProject = db
-      .prepare("SELECT * FROM projects WHERE id = ?")
-      .get(DEMO_PROJECT_ID);
-    if (!demoProject) {
-      seedDemoProject();
-    }
+    const demoProject = db.prepare("SELECT * FROM projects WHERE id = ?").get(DEMO_PROJECT_ID);
+    if (!demoProject) seedDemoProject();
+    seedConnectorsAndSuggestions(); // idempotent
     const existingWs = db
       .prepare("SELECT * FROM workspaces WHERE id = ?")
       .get(DEFAULT_WORKSPACE_ID) as Workspace;
@@ -44,50 +41,137 @@ export function ensureSeed(): { user: User; workspace: Workspace } {
 
   const now = Date.now();
   db.prepare(
-    `INSERT INTO users (id, name, email, avatar_url, role, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(
-    DEFAULT_USER_ID,
-    "Animesh",
-    "animesh@forgecloud.dev",
-    null,
-    "owner",
-    now,
-  );
+    `INSERT INTO users (id, name, email, avatar_url, role, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(DEFAULT_USER_ID, "Sal", "sal@pleasurepizza.com", null, "owner", now);
 
   db.prepare(
-    `INSERT INTO workspaces (id, name, owner_id, plan, created_at)
-     VALUES (?, ?, ?, ?, ?)`,
-  ).run(
-    DEFAULT_WORKSPACE_ID,
-    "Animesh's Workspace",
-    DEFAULT_USER_ID,
-    "pro",
-    now,
-  );
+    `INSERT INTO workspaces (id, name, owner_id, plan, created_at) VALUES (?, ?, ?, ?, ?)`,
+  ).run(DEFAULT_WORKSPACE_ID, "Pleasure Pizza", DEFAULT_USER_ID, "pro", now);
 
   const teamMembers: Array<[string, string, string, string, number]> = [
-    ["tm-animesh", DEFAULT_WORKSPACE_ID, "Animesh", "owner", 0],
-    ["tm-sarah", DEFAULT_WORKSPACE_ID, "Sarah", "reviewer", 0],
-    ["tm-david", DEFAULT_WORKSPACE_ID, "David", "reviewer", 0],
+    ["tm-sal", DEFAULT_WORKSPACE_ID, "Sal", "owner", 0],
+    ["tm-marco", DEFAULT_WORKSPACE_ID, "Marco", "manager", 0],
+    ["tm-jamie", DEFAULT_WORKSPACE_ID, "Jamie", "staff", 0],
   ];
   const insertTm = db.prepare(
-    `INSERT INTO team_members (id, workspace_id, display_name, role, is_ai, permissions)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO team_members (id, workspace_id, display_name, role, is_ai, permissions) VALUES (?, ?, ?, ?, ?, ?)`,
   );
   for (const [id, ws, name, role, isAi] of teamMembers) {
     insertTm.run(id, ws, name, role, isAi, JSON.stringify(["approve", "request", "view"]));
   }
 
   seedDemoProject();
+  seedConnectorsAndSuggestions();
 
-  const user = db
-    .prepare("SELECT * FROM users WHERE id = ?")
-    .get(DEFAULT_USER_ID) as User;
+  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(DEFAULT_USER_ID) as User;
   const workspace = db
     .prepare("SELECT * FROM workspaces WHERE id = ?")
     .get(DEFAULT_WORKSPACE_ID) as Workspace;
   return { user, workspace };
+}
+
+function seedConnectorsAndSuggestions() {
+  const db = getDb();
+  const now = Date.now();
+
+  // Connections (some pre-connected for demo readiness).
+  const connectors: Array<[string, string, string, string, string | null, string | null, number | null]> = [
+    ["conn-gmail", "gmail", "Gmail", "connected", "sal@pleasurepizza.com", "✉️", now - 1000 * 60 * 60 * 24],
+    ["conn-sheets", "google_sheets", "Google Sheets", "connected", "Pleasure Pizza – Sales 2026", "📊", now - 1000 * 60 * 60 * 24],
+    ["conn-calendar", "google_calendar", "Google Calendar", "connected", "Catering & Events", "📅", now - 1000 * 60 * 60 * 24],
+    ["conn-slack", "slack", "Slack", "available", null, "💬", null],
+    ["conn-stripe", "stripe", "Stripe / POS", "available", null, "💳", null],
+    ["conn-notion", "notion", "Notion", "available", null, "🗒", null],
+    ["conn-hubspot", "hubspot", "HubSpot", "available", null, "🔁", null],
+    ["conn-shopify", "shopify", "Shopify", "available", null, "🛒", null],
+  ];
+  const insertConn = db.prepare(
+    `INSERT OR IGNORE INTO connections (id, workspace_id, provider, label, status, account_label, icon, connected_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  for (const [id, provider, label, status, account, icon, connected_at] of connectors) {
+    insertConn.run(id, DEFAULT_WORKSPACE_ID, provider, label, status, account, icon, connected_at);
+  }
+
+  // Discoveries (what scanning the connected tools found).
+  const discoveries: Array<[string, string, string, string, string, string, number]> = [
+    ["disc-1", "conn-gmail", "gmail", "Catering requests", "12 catering inquiries from the last 30 days", "Catering", 12],
+    ["disc-2", "conn-gmail", "gmail", "Customer complaints", "3 complaints about slow Friday service", "Complaints", 3],
+    ["disc-3", "conn-sheets", "google_sheets", "Daily sales", "Sales-by-hour rows for the last 90 days", "Sales", 90],
+    ["disc-4", "conn-sheets", "google_sheets", "Staff schedule", "Shift assignments for 6 staff members", "Staff", 6],
+    ["disc-5", "conn-sheets", "google_sheets", "Slow hours", "Recurring quiet window: 2pm–4pm on weekdays", "Hours", 10],
+    ["disc-6", "conn-calendar", "google_calendar", "Catering & events", "4 confirmed events in the next 30 days", "Events", 4],
+  ];
+  const insertDisc = db.prepare(
+    `INSERT OR IGNORE INTO discoveries (id, workspace_id, project_id, connection_id, provider, label, detail, count) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  for (const [id, conn, provider, label, detail, _kind, count] of discoveries) {
+    insertDisc.run(id, DEFAULT_WORKSPACE_ID, DEMO_PROJECT_ID, conn, provider, label, detail, count);
+  }
+
+  // Suggested apps (cards the user picks from after scanning).
+  const apps: Array<[string, string, string, string, string, string[], string[]]> = [
+    [
+      "app-pizza-ops",
+      "pizza-ops-dashboard",
+      "Pizza Ops Dashboard",
+      "Daily sales, slow hours, staff tasks, complaints, and promos in one screen.",
+      "🍕",
+      ["gmail", "google_sheets", "google_calendar"],
+      ["Sales today", "Slow-hours chart", "Staff tasks", "Promo builder", "Complaint log"],
+    ],
+    [
+      "app-catering",
+      "catering-tracker",
+      "Catering Order Tracker",
+      "Track inbound catering requests from Gmail + Calendar in one queue.",
+      "🥪",
+      ["gmail", "google_calendar"],
+      ["Inbound requests", "Quote builder", "Event calendar", "Win/loss tracking"],
+    ],
+    [
+      "app-complaints",
+      "complaint-manager",
+      "Complaint Manager",
+      "Triage and resolve customer complaints flagged from Gmail.",
+      "📮",
+      ["gmail"],
+      ["Inbox triage", "Resolution status", "Owner sign-off"],
+    ],
+    [
+      "app-staff",
+      "staff-task-board",
+      "Staff Task Board",
+      "Daily checklist with reset, assignments, and completion tracking.",
+      "🧹",
+      ["google_sheets"],
+      ["Daily reset", "Per-staff status", "Closing checklist"],
+    ],
+    [
+      "app-slow-day",
+      "slow-day-promo",
+      "Slow-Day Promo Tool",
+      "Detect quiet hours and propose safe promos with profit estimate.",
+      "📣",
+      ["google_sheets"],
+      ["Slow-day detection", "Promo composer", "Profit estimate", "Owner approval"],
+    ],
+  ];
+  const insertApp = db.prepare(
+    `INSERT OR IGNORE INTO suggested_apps (id, workspace_id, project_id, slug, title, description, icon, uses_connections, sample_features) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  for (const [id, slug, title, description, icon, uses, features] of apps) {
+    insertApp.run(
+      id,
+      DEFAULT_WORKSPACE_ID,
+      DEMO_PROJECT_ID,
+      slug,
+      title,
+      description,
+      icon,
+      JSON.stringify(uses),
+      JSON.stringify(features),
+    );
+  }
 }
 
 function seedDemoProject() {
@@ -95,46 +179,49 @@ function seedDemoProject() {
   const now = Date.now();
 
   db.prepare(
-    `INSERT OR REPLACE INTO projects (id, workspace_id, name, description, status, repo_url, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO projects (id, workspace_id, name, description, status, repo_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     DEMO_PROJECT_ID,
     DEFAULT_WORKSPACE_ID,
-    "Pielot Waitlist",
-    "Early-access waitlist for the Pielot launch",
+    "Pleasure Pizza Ops",
+    "Internal dashboard for sales, slow hours, staff tasks, and promos",
     "building",
-    "https://github.com/pielot/waitlist",
+    "https://github.com/pleasurepizza/ops",
     now - 1000 * 60 * 60 * 24 * 2,
   );
 
-  // Agents
+  // Agents (9 agents + a Data Agent extra is handled by Backend; keep AGENT_DEFS shape).
   const agentDefs = [
     ["Product Agent", "product", "Turns user requests into features and tasks"],
     ["Design Agent", "design", "Creates UI layout and design direction"],
     ["Frontend Agent", "frontend", "Builds React components and pages"],
     ["Backend Agent", "backend", "Builds APIs, database schema, and auth (uses InsForge)"],
     ["QA Agent", "qa", "Tests the app and catches bugs before they ship"],
-    ["DevOps Agent", "devops", "Builds, deploys, and rolls back on Railway"],
+    ["DevOps Agent", "devops", "Builds, deploys, and rolls back on Cloudflare"],
     ["Auth Agent", "auth", "Wires up team access and login"],
     ["Safety Agent", "safety", "Blocks secrets, dangerous commands, and risky deploys"],
     ["Recovery Agent", "recovery", "Handles failures, retries, and rollbacks"],
   ] as const;
   const agentIds: Record<string, string> = {};
   const insertAgent = db.prepare(
-    `INSERT OR REPLACE INTO agents (id, project_id, name, type, role, permissions, status, model_primary, model_fallback, last_action, last_action_at, retry_count)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO agents (id, project_id, name, type, role, permissions, status, model_primary, model_fallback, last_action, last_action_at, retry_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   for (const [name, type, role] of agentDefs) {
     const id = `agent-${type}-demo`;
     agentIds[type] = id;
     const status = type === "frontend" || type === "design" ? "working" : "idle";
-    const lastAction = type === "frontend"
-      ? "Building: Email confirmation page"
-      : type === "design"
-        ? "Building: Hero section polish"
-        : type === "qa"
-          ? "Approved PR #3 (signup form validation)"
-          : `Shipped: Waitlist sign-up`;
+    const lastAction =
+      type === "frontend"
+        ? "Building: Profit estimate card"
+        : type === "design"
+          ? "Polishing: Slow-hours chart"
+          : type === "data"
+            ? "Calculated slow hours from 90 days of sales"
+            : type === "safety"
+              ? "Blocked '50% off all pizzas' — discount above safe margin"
+              : type === "qa"
+                ? "Approved PR #3 (closing checklist)"
+                : `Shipped: PR #1 (Pizza Ops Dashboard v1)`;
     insertAgent.run(
       id,
       DEMO_PROJECT_ID,
@@ -151,24 +238,26 @@ function seedDemoProject() {
     );
   }
 
-  // Tasks
+  // Tasks (matching the spec's pizza shop scenario).
   const tasks: Array<[string, string, string, string, string, string, string, number]> = [
-    ["task-1", "Waitlist landing page", "Hero section, signup form, and feature highlights. The first thing visitors see.", "done", "med", "frontend", "tm-sarah", now - 1000 * 60 * 60 * 24 * 2],
-    ["task-2", "Email confirmation flow", "Send a welcome email when a user joins. Resend button on the thank-you page.", "done", "low", "backend", "tm-sarah", now - 1000 * 60 * 60 * 24],
-    ["task-3", "Admin dashboard", "View total signups, referrers, and a table of recent signups with export.", "building", "med", "frontend", "tm-david", now - 1000 * 60 * 60 * 12],
-    ["task-4", "Referral tracking", "Add a '?ref=' link that credits a signup to the referrer; show a leaderboard on the landing page.", "backlog", "med", "backend", "tm-david", now - 1000 * 60 * 60 * 6],
-    ["task-5", "Add position to waitlist", "Show each user their position in line based on signup order.", "review", "low", "frontend", "tm-sarah", now - 1000 * 60 * 60 * 3],
-    ["task-6", "Database migration: add referrer_code column", "Add referrer_code column to waitlist_signups table. Required for the new referral tracking feature.", "review", "high", "backend", "tm-david", now - 1000 * 60 * 60 * 2],
-    ["task-7", "Mobile responsive polish", "Make the landing page work well on small screens. Test on iPhone SE, Pixel 7, etc.", "backlog", "low", "design", "tm-sarah", now - 1000 * 60 * 60 * 1],
-    ["task-8", "Privacy policy + terms", "Generate plain-English privacy policy and terms of service. Footer links on every page.", "backlog", "low", "frontend", "tm-david", now - 1000 * 60 * 30],
+    ["task-1", "Sales dashboard", "Cards for today's sales, orders, avg order value", "done", "low", "frontend", "tm-sal", now - 1000 * 60 * 60 * 24 * 2],
+    ["task-2", "Slow-hours chart", "Highlight low-traffic windows from order timestamps", "done", "low", "backend", "tm-sal", now - 1000 * 60 * 60 * 36],
+    ["task-3", "Customer winback table", "Repeat customers + last order date + 'eligible' status", "done", "med", "backend", "tm-marco", now - 1000 * 60 * 60 * 24],
+    ["task-4", "Promo builder", "Compose simple discount campaigns with target + offer", "review", "med", "frontend", "tm-sal", now - 1000 * 60 * 60 * 12],
+    ["task-5", "Profit impact on promos", "Show revenue / discount cost / expected net before approving", "review", "med", "backend", "tm-sal", now - 1000 * 60 * 60 * 6],
+    ["task-6", "Staff task board", "Daily checklist that resets each morning", "review", "low", "frontend", "tm-marco", now - 1000 * 60 * 60 * 3],
+    ["task-7", "Closing checklist", "Nightly cleanup list staff mark complete; owner sees who did what", "review", "low", "frontend", "tm-jamie", now - 1000 * 60 * 60 * 2],
+    ["task-8", "Mask customer phone numbers", "Replace full numbers with •••-•••-####; owner-only unmask", "review", "high", "backend", "tm-sal", now - 1000 * 60 * 60 * 1],
+    ["task-9", "Complaint log", "Inbox-style triage for Gmail-flagged complaints", "backlog", "low", "backend", "tm-marco", now - 1000 * 60 * 45],
+    ["task-10", "Catering tracker", "Pull catering inquiries from Gmail + Calendar", "backlog", "med", "backend", "tm-sal", now - 1000 * 60 * 30],
+    ["task-11", "Inventory tracker", "Restock alerts driven by supplier emails", "backlog", "low", "backend", "tm-marco", now - 1000 * 60 * 20],
+    ["task-12", "Deploy to Cloudflare", "Production deploy of v1 dashboard", "backlog", "med", "devops", "tm-sal", now - 1000 * 60 * 10],
   ];
   const insertTask = db.prepare(
-    `INSERT OR REPLACE INTO tasks (id, project_id, title, description, status, priority, risk_level, requester_id, requester_name, assigned_agent_id, reviewer_id, reviewer_name, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO tasks (id, project_id, title, description, status, priority, risk_level, requester_id, requester_name, assigned_agent_id, reviewer_id, reviewer_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   for (const [id, title, desc, status, risk, agentType, reviewer, createdAt] of tasks) {
     const priority = risk === "high" ? "high" : risk === "med" ? "med" : "low";
-    const agentId = agentIds[agentType] ?? null;
     insertTask.run(
       id,
       DEMO_PROJECT_ID,
@@ -178,25 +267,24 @@ function seedDemoProject() {
       priority,
       risk,
       "user-animesh",
-      "Animesh",
-      agentId,
+      "Sal",
+      agentIds[agentType] ?? null,
       reviewer,
-      "Sarah",
+      reviewer === "tm-sal" ? "Sal" : reviewer === "tm-marco" ? "Marco" : "Jamie",
       createdAt,
     );
   }
 
-  // PRs
+  // PRs — five PRs per spec.
   const prs: Array<[string, string | null, number, string, string, string, string, string, number, number, string | null, number]> = [
-    ["pr-1", "task-1", 1, "Add waitlist landing page", "Hero, signup form, and feature highlights. All mobile responsive.", "approved", "low", "Animesh", 4, now - 1000 * 60 * 60 * 24 * 2 + 1000 * 60 * 30, null, 0],
-    ["pr-2", "task-2", 2, "Wire up email confirmation", "Resend button, welcome template, and a 30-minute token TTL.", "approved", "low", "Animesh", 3, now - 1000 * 60 * 60 * 24 + 1000 * 60 * 45, null, 0],
-    ["pr-3", "task-5", 3, "Show position in line", "Adds a small badge to the thank-you page with the user's current waitlist rank.", "open", "low", null, 2, now - 1000 * 60 * 60 * 3, "https://preview-3.forgecloud.dev", 0],
-    ["pr-4", "task-3", 4, "Admin dashboard with signup table", "Cards at the top for total signups, today's count, and top referrer. Filterable table below.", "open", "med", null, 5, now - 1000 * 60 * 60 * 12, "https://preview-4.forgecloud.dev", 1],
-    ["pr-5", "task-6", 5, "Add referrer_code column to waitlist_signups", "Backend Agent wants to add a referrer_code column to the waitlist_signups table. Includes a backfill and an index.", "open", "high", null, 1, now - 1000 * 60 * 60 * 2, "https://preview-5.forgecloud.dev", 1],
+    ["pr-1", "task-1", 1, "Create Pizza Ops Dashboard v1", "First version of the internal dashboard: sales, customers, staff tasks, promo builder, and login.", "approved", "med", "Sal", 8, now - 1000 * 60 * 60 * 24 * 2 + 1000 * 60 * 45, "https://preview-1.forgecloud.dev", 1],
+    ["pr-2", "task-5", 2, "Add Profit Impact to Promos", "Promo Builder now estimates revenue, discount cost, and expected net before the owner approves a campaign.", "open", "med", null, 4, now - 1000 * 60 * 60 * 6, "https://preview-2.forgecloud.dev", 1],
+    ["pr-3", "task-7", 3, "Add Closing Checklist", "Nightly checklist staff mark complete; tasks reset each morning and the owner sees who did what.", "open", "low", null, 3, now - 1000 * 60 * 60 * 2, "https://preview-3.forgecloud.dev", 0],
+    ["pr-4", "task-8", 4, "Mask Customer Phone Numbers", "Customer table now shows masked phone numbers (•••-•••-####). Only owner-role accounts can unmask.", "open", "high", null, 2, now - 1000 * 60 * 60 * 1, "https://preview-4.forgecloud.dev", 1],
+    ["pr-5", "task-12", 5, "Deploy Pizza Ops to Cloudflare", "Publishes the approved dashboard to production and saves the previous version as a rollback point.", "open", "med", null, 1, now - 1000 * 60 * 20, "https://preview-5.forgecloud.dev", 1],
   ];
   const insertPr = db.prepare(
-    `INSERT OR REPLACE INTO pull_requests (id, project_id, task_id, number, title, summary, status, risk_level, source_branch, target_branch, preview_url, requires_approval, approver_name, approved_at, created_by_agent_id, files_changed, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'main', ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO pull_requests (id, project_id, task_id, number, title, summary, status, risk_level, source_branch, target_branch, preview_url, requires_approval, approver_name, approved_at, created_by_agent_id, files_changed, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'main', ?, ?, ?, ?, ?, ?, ?)`,
   );
   for (const [id, taskId, num, title, summary, status, risk, approver, filesChanged, createdAt, previewUrl, requiresApproval] of prs) {
     insertPr.run(
@@ -219,32 +307,35 @@ function seedDemoProject() {
     );
   }
 
-  // Per-PR change rows (so the Changes screen has realistic per-file content).
+  // Per-file change rows for the 5 PRs.
   const changeRows: Array<[string, string, string, string, string, string | null]> = [
-    // pr-1 (waitlist landing page)
-    ["chg-1a", "pr-1", "ui/landing-hero.tsx", "+ added hero section with email signup\n- removed placeholder copy", "Added a new hero section with the headline, sub-headline, and email signup input.", null],
-    ["chg-1b", "pr-1", "ui/feature-grid.tsx", "+ added 3-column feature grid\n+ added supporting copy", "Built a three-card feature grid below the hero.", null],
-    ["chg-1c", "pr-1", "ui/landing.css", "+ added warm gradient + softer corners", "Updated styling to match the warm, modern brand direction.", null],
-    ["chg-1d", "pr-1", "lib/track-visit.ts", "+ wired up an anonymous page-visit ping", "Tracks page visits anonymously to measure how many people see the landing page.", null],
+    // PR #1 Pizza Ops Dashboard v1
+    ["chg-1a", "pr-1", "ui/dashboard/SalesCards.tsx", "+ daily sales, orders, average order, slowest hour cards", "Top-row cards showing today's sales, orders, average order value, and the slowest hour.", null],
+    ["chg-1b", "pr-1", "ui/dashboard/SlowHoursChart.tsx", "+ slow hours from order timestamps", "Highlights the 2-hour window with the fewest orders so the owner knows when to run promos.", null],
+    ["chg-1c", "pr-1", "ui/customers/CustomerTable.tsx", "+ customer winback table with last-order date", "Repeat customers and how long since their last order.", null],
+    ["chg-1d", "pr-1", "ui/staff/StaffTaskBoard.tsx", "+ daily staff task board", "Today's staff tasks with owner and completion status.", null],
+    ["chg-1e", "pr-1", "ui/promos/PromoBuilder.tsx", "+ promo composer (target, offer, time window)", "Form to compose a quick discount campaign for slow days.", null],
+    ["chg-1f", "pr-1", "ui/complaints/ComplaintList.tsx", "+ inbox of customer complaints", "Customer complaints flagged from Gmail.", null],
+    ["chg-1g", "pr-1", "api/auth/staff.ts", "+ staff login + owner role guard", "Basic login for staff. Only owner accounts can approve discounts.", null],
+    ["chg-1h", "pr-1", "migrations/0001_pizza_ops.sql", "+ orders, customers, promos, tasks, complaints tables", "Created the database tables the dashboard reads from.", "Adds 5 new tables to InsForge. Additive only."],
 
-    // pr-2 (email confirmation)
-    ["chg-2a", "pr-2", "api/send-confirmation.ts", "+ sends a welcome email\n+ 30-minute token TTL", "When a user signs up, send a welcome email with a confirmation link. Token expires after 30 minutes.", null],
-    ["chg-2b", "pr-2", "ui/thank-you.tsx", "+ added 'Resend confirmation' button", "Added a Resend button on the thank-you page so users can request a fresh email.", null],
-    ["chg-2c", "pr-2", "templates/welcome-email.html", "+ added the welcome email template", "Designed the welcome email template — plain text + a brand-colored CTA.", null],
+    // PR #2 Profit Impact
+    ["chg-2a", "pr-2", "ui/promos/ProfitEstimate.tsx", "+ shows revenue / discount cost / expected net", "Before approving a promo, owner sees estimated revenue, discount cost, and expected net.", null],
+    ["chg-2b", "pr-2", "api/promos/estimate.ts", "+ promo math", "Calculates the financial impact of a proposed promo from sales history.", null],
+    ["chg-2c", "pr-2", "ui/promos/ApprovalBanner.tsx", "+ approval required if discount > 25%", "Discounts above 25% trigger an inline approval prompt.", "Affects pricing decisions — review the threshold."],
+    ["chg-2d", "pr-2", "lib/opt-out.ts", "+ exclude opted-out customers", "Promos cannot be sent to customers who opted out.", null],
 
-    // pr-3 (position in line)
-    ["chg-3a", "pr-3", "ui/thank-you.tsx", "+ added position badge\n+ pulled signup_rank from API", "Show each user their position in line based on signup order.", null],
-    ["chg-3b", "pr-3", "api/get-position.ts", "+ new endpoint returns the user's signup rank", "Backend endpoint returns the user's rank in the waitlist.", null],
+    // PR #3 Closing Checklist
+    ["chg-3a", "pr-3", "ui/staff/ClosingChecklist.tsx", "+ nightly checklist", "Nightly closing checklist with checkbox items.", null],
+    ["chg-3b", "pr-3", "api/staff/checklist-reset.ts", "+ daily 5am reset", "Checklist items reset every morning.", null],
+    ["chg-3c", "pr-3", "ui/dashboard/ChecklistStatus.tsx", "+ per-staff completion view", "Owner sees who completed each closing task.", null],
 
-    // pr-4 (admin dashboard)
-    ["chg-4a", "pr-4", "ui/admin/dashboard.tsx", "+ summary cards (total, today, top referrer)\n+ filterable signups table", "New admin screen with total signups, today's count, top referrer, and a filterable list.", null],
-    ["chg-4b", "pr-4", "ui/admin/export-csv.ts", "+ wired up CSV export of the signups table", "Adds a CSV export button so the team can download signups.", null],
-    ["chg-4c", "pr-4", "api/admin/list-signups.ts", "+ paginated list endpoint with filters", "Paginated backend endpoint that the admin dashboard reads from.", null],
-    ["chg-4d", "pr-4", "api/auth/require-admin.ts", "+ guards the admin endpoints", "Only signed-in admins can hit the new endpoints.", null],
-    ["chg-4e", "pr-4", "ui/admin/signups-table.tsx", "+ table with sort and search", "The signups table — sortable and searchable.", null],
+    // PR #4 Phone masking — HIGH RISK
+    ["chg-4a", "pr-4", "ui/customers/PhoneCell.tsx", "+ render masked phone numbers", "Customer table now shows •••-•••-#### by default.", null],
+    ["chg-4b", "pr-4", "api/customers/unmask.ts", "+ owner-only unmask endpoint", "Only owner-role accounts can unmask a phone number.", "Customer-data privacy: owner-only access guarded server-side."],
 
-    // pr-5 (referrer_code DB migration — HIGH RISK)
-    ["chg-5a", "pr-5", "migrations/0007_add_referrer_code.sql", "+ ALTER TABLE waitlist_signups ADD COLUMN referrer_code text\n+ CREATE INDEX idx_signups_referrer_code", "Adds a new column to the signups table and an index. Existing rows are filled with NULL.", "Modifies database schema — review carefully before approving."],
+    // PR #5 Cloudflare deploy
+    ["chg-5a", "pr-5", "deploy/cloudflare.toml", "+ production target + rollback target", "Production deploy on Cloudflare with the previous version saved as a rollback point.", "Publishes the internal tool to production."],
   ];
   const insertChange = db.prepare(
     `INSERT OR REPLACE INTO changes (id, pr_id, file_path, technical_diff, plain_english_summary, risk_explanation, agent_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -253,81 +344,175 @@ function seedDemoProject() {
     insertChange.run(id, prId, filePath, diff, summary, riskExplanation, agentIds["frontend"] ?? null);
   }
 
-  // Recovery events
+  // Branches + commits derived from the PRs.
+  const insertBranch = db.prepare(
+    `INSERT OR REPLACE INTO branches (id, project_id, name, base_branch, head_pr_id, status, created_by_agent_id, created_at, merged_at) VALUES (?, ?, ?, 'main', ?, ?, ?, ?, ?)`,
+  );
+  const insertCommit = db.prepare(
+    `INSERT OR REPLACE INTO commits (id, project_id, branch_id, pr_id, sha, message, author, files_changed, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const branchSpecs: Array<[string, string, string, string, string, number, number | null]> = [
+    ["branch-1", "feature/create-pizza-ops-dashboard-v1", "pr-1", "merged", agentIds["frontend"], now - 1000 * 60 * 60 * 24 * 2, now - 1000 * 60 * 60 * 24 * 2 + 1000 * 60 * 60],
+    ["branch-2", "feature/add-profit-impact-to-promos", "pr-2", "active", agentIds["backend"], now - 1000 * 60 * 60 * 6, null],
+    ["branch-3", "feature/add-closing-checklist", "pr-3", "active", agentIds["frontend"], now - 1000 * 60 * 60 * 2, null],
+    ["branch-4", "feature/mask-customer-phone-numbers", "pr-4", "active", agentIds["backend"], now - 1000 * 60 * 60 * 1, null],
+    ["branch-5", "feature/deploy-pizza-ops-to-cloudflare", "pr-5", "active", agentIds["devops"], now - 1000 * 60 * 20, null],
+  ];
+  for (const [id, name, prId, status, agentId, createdAt, mergedAt] of branchSpecs) {
+    insertBranch.run(id, DEMO_PROJECT_ID, name, prId, status, agentId, createdAt, mergedAt);
+  }
+  // One commit per PR; branch-1 has two commits (initial + fixup).
+  const commitSpecs: Array<[string, string, string, string, string, string, number, number]> = [
+    ["commit-1a", "branch-1", "pr-1", "a17f02b3", "Add sales cards + slow-hours chart + customer table", "Frontend Agent", 4, now - 1000 * 60 * 60 * 24 * 2 + 1000 * 60 * 30],
+    ["commit-1b", "branch-1", "pr-1", "b29cd148", "Wire InsForge tables + owner auth guard", "Backend Agent", 4, now - 1000 * 60 * 60 * 24 * 2 + 1000 * 60 * 55],
+    ["commit-2", "branch-2", "pr-2", "c30f2a7d", "Add profit estimate + 25% discount approval rule", "Backend Agent", 4, now - 1000 * 60 * 60 * 6 + 1000 * 60 * 12],
+    ["commit-3", "branch-3", "pr-3", "d41a83f9", "Add nightly closing checklist with daily reset", "Frontend Agent", 3, now - 1000 * 60 * 60 * 2 + 1000 * 60 * 8],
+    ["commit-4", "branch-4", "pr-4", "e52b91ac", "Mask phone numbers; owner-only unmask endpoint", "Backend Agent", 2, now - 1000 * 60 * 60 * 1 + 1000 * 60 * 5],
+    ["commit-5", "branch-5", "pr-5", "f63c08eb", "Cloudflare prod target + rollback point", "DevOps Agent", 1, now - 1000 * 60 * 20 + 1000 * 60 * 3],
+  ];
+  for (const [id, branchId, prId, sha, msg, author, files, createdAt] of commitSpecs) {
+    insertCommit.run(id, DEMO_PROJECT_ID, branchId, prId, sha, msg, author, files, createdAt);
+  }
+
+  // Worktrees — parallel sandboxes assigned to specific agents.
+  const insertWorktree = db.prepare(
+    `INSERT OR REPLACE INTO worktrees (id, project_id, branch_id, name, status, assigned_agent_id, preview_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const worktreeSpecs: Array<[string, string, string, string, string, string]> = [
+    ["wt-1", "branch-2", "wt/profit-impact", "active", agentIds["backend"], "https://preview-2.forgecloud.dev"],
+    ["wt-2", "branch-3", "wt/closing-checklist", "active", agentIds["frontend"], "https://preview-3.forgecloud.dev"],
+    ["wt-3", "branch-4", "wt/phone-masking", "active", agentIds["backend"], "https://preview-4.forgecloud.dev"],
+  ];
+  for (const [id, branchId, name, status, agentId, previewUrl] of worktreeSpecs) {
+    insertWorktree.run(id, DEMO_PROJECT_ID, branchId, name, status, agentId, previewUrl, now - 1000 * 60 * 30);
+  }
+
+  // Recovery events from the demo spec.
   const recoveries: Array<[string, string, string, string, string, number]> = [
-    ["rec-1", "model_timeout", "Primary model timed out on Frontend Agent while rendering the signup form", `Switched to fallback model (${SEED_FALLBACK_MODEL}) and continued from saved state`, "recovered", now - 1000 * 60 * 60 * 18],
-    ["rec-2", "build_failed", "Build failed on the latest PR — TypeScript error in Form.tsx", "QA Agent isolated the bad file, Frontend Agent shipped a fix, build re-ran successfully", "recovered", now - 1000 * 60 * 60 * 8],
-    ["rec-3", "secret_detected", "Safety Agent detected a hardcoded sk- credential in the email-template generator", "Safety Agent blocked the PR before merge — secrets never reach production", "blocked", now - 1000 * 60 * 60 * 4],
+    ["rec-1", "model_timeout", "Frontend Agent failed: primary coding model timed out", `Switched to backup coding model (${SEED_FALLBACK_MODEL}) and continued from last saved step`, "recovered", now - 1000 * 60 * 60 * 18],
+    ["rec-2", "build_failed", "Build failed because PromoEstimate had a missing import", "QA Agent caught the broken build. Frontend Agent fixed the import. New preview deployed.", "recovered", now - 1000 * 60 * 60 * 10],
+    ["rec-3", "unsafe_discount", "AI tried to create '50% off all pizzas' campaign", "Safety Agent blocked: discount exceeds safe margin threshold. Owner approval required.", "blocked", now - 1000 * 60 * 60 * 5],
+    ["rec-4", "privacy_violation", "Backend Agent tried to expose customer phone numbers", "Safety Agent blocked: showing masked numbers (•••-•••-####) to all-staff views.", "blocked", now - 1000 * 60 * 60 * 4],
+    ["rec-5", "deploy_failed", "Cloudflare preview deploy timed out", "Kept previous preview live, retried with optimized build, created new preview URL.", "recovered", now - 1000 * 60 * 60 * 2],
   ];
   const insertRecovery = db.prepare(
-    `INSERT OR REPLACE INTO recovery_events (id, project_id, agent_run_id, failure_type, failure_message, recovery_action, status, created_at)
-     VALUES (?, ?, NULL, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO recovery_events (id, project_id, agent_run_id, failure_type, failure_message, recovery_action, status, created_at) VALUES (?, ?, NULL, ?, ?, ?, ?, ?)`,
   );
   for (const [id, type, msg, action, status, createdAt] of recoveries) {
     insertRecovery.run(id, DEMO_PROJECT_ID, type, msg, action, status, createdAt);
   }
 
-  // Approval (pending unsafe DB migration)
+  // Approval (pending — phone masking is high risk).
   db.prepare(
-    `INSERT OR REPLACE INTO approvals (id, project_id, pr_id, reason, risk_level, details, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`,
+    `INSERT OR REPLACE INTO approvals (id, project_id, pr_id, reason, risk_level, details, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`,
   ).run(
     "apr-1",
     DEMO_PROJECT_ID,
-    "pr-5",
-    "Database schema change — affects existing data",
+    "pr-4",
+    "Customer data privacy — masking phone numbers",
     "high",
-    "Backend Agent wants to add a referrer_code column to the waitlist_signups table. This migration is safe to run (additive only, no rows dropped) but still requires your sign-off.",
-    now - 1000 * 60 * 60 * 2,
+    "Backend Agent wants to mask customer phone numbers in the staff view. Only owner-role accounts can unmask. Affects how staff sees customer records.",
+    now - 1000 * 60 * 60 * 1,
   );
 
-  // Live preview deploy
+  // Live preview deployment.
   db.prepare(
-    `INSERT OR REPLACE INTO deployments (id, project_id, pr_id, environment, status, railway_url, cloudflare_url, build_logs, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO deployments (id, project_id, pr_id, environment, status, railway_url, cloudflare_url, build_logs, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     "dep-1",
     DEMO_PROJECT_ID,
-    "pr-3",
+    "pr-1",
     "preview",
     "live",
     null,
-    "https://preview-pielot-waitlist.forgecloud.dev",
-    "Build succeeded at " + new Date(now - 1000 * 60 * 60 * 2).toISOString() + " (45s)",
+    "https://preview-pleasure-pizza.forgecloud.dev",
+    "Build succeeded at " + new Date(now - 1000 * 60 * 60 * 2).toISOString() + " (38s)",
     now - 1000 * 60 * 60 * 2,
   );
 
-  // Chat messages
+  // Chat messages seeded.
   const chatMsgs: Array<[string, string, string, string | null, number]> = [
-    ["msg-1", "user", "Build a waitlist app for Pielot. I want a clean landing page, an email signup form, and an admin view for tracking signups.", null, now - 1000 * 60 * 60 * 24 * 2],
-    ["msg-2", "assistant", "Got it. Here's the build plan. Review the features below, then I'll start building once you approve.", JSON.stringify({ kind: "plan", plan: { summary: "A complete waitlist app for Pielot with landing page, signup form, admin dashboard, and email confirmation.", suggestedProjectName: "Pielot Waitlist", suggestedStyle: "Stripe-modern", features: [
-      { title: "Landing page", description: "Hero, features, and call-to-action", ownerAgent: "Design Agent", riskLevel: "low", estimatedFiles: 3 },
-      { title: "Waitlist form", description: "Email signup with confirmation", ownerAgent: "Frontend Agent", riskLevel: "low", estimatedFiles: 2 },
-      { title: "Admin dashboard", description: "View signups and export to CSV", ownerAgent: "Frontend Agent", riskLevel: "low", estimatedFiles: 3 },
-      { title: "Email confirmation", description: "Send welcome email on signup", ownerAgent: "Backend Agent", riskLevel: "med", estimatedFiles: 2 },
-      { title: "Preview deploy", description: "Live preview URL", ownerAgent: "DevOps Agent", riskLevel: "low", estimatedFiles: 1 },
-    ] }, taskIds: [] }), now - 1000 * 60 * 60 * 24 * 2 + 1000 * 60 * 5],
-    ["msg-3", "user", "Looks good. Add a position-in-line badge to the thank-you page.", null, now - 1000 * 60 * 60 * 3],
-    ["msg-4", "assistant", "Done. Created task \"Show position in line\" and assigned it to the Frontend Agent. Watch it on the Tasks screen.", JSON.stringify({ kind: "task_created" }), now - 1000 * 60 * 60 * 3 + 1000 * 60 * 2],
+    [
+      "msg-1",
+      "user",
+      "Build me an internal dashboard for my pizza shop. I want to see today's sales, slow hours, top customers, repeat orders, employee tasks, and a way to create simple promo campaigns for slow days.",
+      null,
+      now - 1000 * 60 * 60 * 24 * 2,
+    ],
+    [
+      "msg-2",
+      "assistant",
+      "I'll build the Pizza Ops Dashboard. I scanned your Gmail, Sheets, and Calendar and found 12 catering requests, 90 days of sales rows, 6 staff members, and your 2pm–4pm slow window. Here's the plan — review before I start.",
+      JSON.stringify({
+        kind: "plan",
+        plan: {
+          summary: "A complete internal dashboard for Pleasure Pizza: sales, customers, slow hours, staff tasks, and promos.",
+          suggestedProjectName: "Pleasure Pizza Ops",
+          suggestedStyle: "Warm Notion-clean",
+          features: [
+            { title: "Sales Dashboard", description: "Today's sales, orders, average order value", ownerAgent: "Product Agent", riskLevel: "low", estimatedFiles: 3 },
+            { title: "Slow-Hours Chart", description: "Highlights low-traffic time windows", ownerAgent: "Backend Agent", riskLevel: "low", estimatedFiles: 2 },
+            { title: "Customer Winback", description: "Repeat customers + last order date + eligibility", ownerAgent: "Backend Agent", riskLevel: "med", estimatedFiles: 3 },
+            { title: "Promo Builder", description: "Compose discount campaigns for slow days", ownerAgent: "Frontend Agent", riskLevel: "med", estimatedFiles: 3 },
+            { title: "Staff Tasks", description: "Daily checklist with reset", ownerAgent: "Frontend Agent", riskLevel: "low", estimatedFiles: 2 },
+            { title: "Complaints Log", description: "Inbox-style triage from Gmail-flagged complaints", ownerAgent: "Backend Agent", riskLevel: "low", estimatedFiles: 2 },
+            { title: "Catering Tracker", description: "Pull catering inquiries from Gmail + Calendar", ownerAgent: "Backend Agent", riskLevel: "med", estimatedFiles: 3 },
+            { title: "Approval System", description: "Owner approval for discounts above 25%", ownerAgent: "Safety Agent", riskLevel: "med", estimatedFiles: 1 },
+            { title: "Cloudflare Deploy", description: "Publish to production with rollback point", ownerAgent: "DevOps Agent", riskLevel: "med", estimatedFiles: 1 },
+          ],
+        },
+        taskIds: [],
+      }),
+      now - 1000 * 60 * 60 * 24 * 2 + 1000 * 60 * 4,
+    ],
+    [
+      "msg-3",
+      "user",
+      "Approve plan",
+      null,
+      now - 1000 * 60 * 60 * 24 * 2 + 1000 * 60 * 5,
+    ],
+    [
+      "msg-4",
+      "assistant",
+      "Building. PR #1 went up 45 minutes after kickoff. Preview is live at preview-pleasure-pizza.forgecloud.dev.",
+      JSON.stringify({ kind: "system" }),
+      now - 1000 * 60 * 60 * 24 * 2 + 1000 * 60 * 50,
+    ],
+    [
+      "msg-5",
+      "user",
+      "On the Promo Builder, I want to see how much money we might lose before I approve a discount.",
+      null,
+      now - 1000 * 60 * 60 * 6 - 1000 * 60 * 2,
+    ],
+    [
+      "msg-6",
+      "assistant",
+      "Got it. Created task 'Profit impact on promos' → Backend Agent. PR #2 is up with revenue, discount cost, and expected net before approval. Discounts above 25% now require your sign-off.",
+      JSON.stringify({ kind: "task_created", taskIds: ["task-5"] }),
+      now - 1000 * 60 * 60 * 6,
+    ],
   ];
   const insertChat = db.prepare(
-    `INSERT OR REPLACE INTO chat_messages (id, project_id, role, content, metadata, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO chat_messages (id, project_id, role, content, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
   );
   for (const [id, role, content, metadata, createdAt] of chatMsgs) {
     insertChat.run(id, DEMO_PROJECT_ID, role, content, metadata, createdAt);
   }
 
-  // Agent runs
+  // Agent runs.
   const runs: Array<[string, string, string, string, string, number, number | null]> = [
     ["run-1", "frontend", "task-1", "completed", SEED_PRIMARY_MODEL, now - 1000 * 60 * 60 * 24 * 2, now - 1000 * 60 * 60 * 24 * 2 + 1000 * 60 * 60],
-    ["run-2", "frontend", "task-1", "recovered", SEED_FALLBACK_MODEL, now - 1000 * 60 * 60 * 18, now - 1000 * 60 * 60 * 18 + 1000 * 60 * 10],
-    ["run-3", "frontend", "task-2", "completed", SEED_PRIMARY_MODEL, now - 1000 * 60 * 60 * 24, now - 1000 * 60 * 60 * 24 + 1000 * 60 * 30],
-    ["run-4", "frontend", "task-5", "running", SEED_PRIMARY_MODEL, now - 1000 * 60 * 60 * 3, null],
+    ["run-2", "backend", "task-2", "completed", SEED_PRIMARY_MODEL, now - 1000 * 60 * 60 * 36, now - 1000 * 60 * 60 * 36 + 1000 * 60 * 40],
+    ["run-3", "frontend", "task-4", "recovered", SEED_FALLBACK_MODEL, now - 1000 * 60 * 60 * 18, now - 1000 * 60 * 60 * 18 + 1000 * 60 * 12],
+    ["run-4", "backend", "task-5", "completed", SEED_PRIMARY_MODEL, now - 1000 * 60 * 60 * 6, now - 1000 * 60 * 60 * 6 + 1000 * 60 * 25],
+    ["run-5", "frontend", "task-7", "completed", SEED_PRIMARY_MODEL, now - 1000 * 60 * 60 * 2, now - 1000 * 60 * 60 * 2 + 1000 * 60 * 15],
+    ["run-6", "backend", "task-8", "completed", SEED_PRIMARY_MODEL, now - 1000 * 60 * 60 * 1, now - 1000 * 60 * 60 * 1 + 1000 * 60 * 18],
+    ["run-7", "devops", "task-12", "running", SEED_PRIMARY_MODEL, now - 1000 * 60 * 15, null],
   ];
   const insertRun = db.prepare(
-    `INSERT OR REPLACE INTO agent_runs (id, project_id, agent_id, task_id, status, input_prompt, model_used, fallback_used, started_at, completed_at, output_summary)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO agent_runs (id, project_id, agent_id, task_id, status, input_prompt, model_used, fallback_used, started_at, completed_at, output_summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   for (const [id, agentType, taskId, status, model, startedAt, completedAt] of runs) {
     insertRun.run(
@@ -343,6 +528,21 @@ function seedDemoProject() {
       completedAt,
       completedAt ? `Shipped PR` : null,
     );
+  }
+
+  // Notifications for the workspace (so the bell has content out of the box).
+  const insertNotif = db.prepare(
+    `INSERT OR REPLACE INTO notifications (id, workspace_id, project_id, user_id, kind, title, body, link, read_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const notifs: Array<[string, string, string, string, string | null, number | null, number]> = [
+    ["notif-1", "pr_opened", "PR #2 opened: Add Profit Impact to Promos", "Backend Agent shipped a new version of the promo builder.", "/app/changes", null, now - 1000 * 60 * 60 * 6],
+    ["notif-2", "approval_needed", "Approval needed: PR #4", "Customer privacy — masking phone numbers.", "/app/changes", null, now - 1000 * 60 * 60 * 1],
+    ["notif-3", "secret_blocked", "Safety Agent blocked an unsafe discount", "'50% off all pizzas' exceeded the safe margin threshold.", "/app/failures", now - 1000 * 60 * 60 * 4, now - 1000 * 60 * 60 * 5],
+    ["notif-4", "deploy_live", "Preview live for Pizza Ops Dashboard", "https://preview-pleasure-pizza.forgecloud.dev", "/app/preview", null, now - 1000 * 60 * 60 * 2],
+    ["notif-5", "comment", "Sal commented on the Promo Builder", "“I want this to show how much money we might lose before I approve a discount.”", "/app/preview", now - 1000 * 60 * 60 * 6, now - 1000 * 60 * 60 * 6 - 1000 * 60 * 5],
+  ];
+  for (const [id, kind, title, body, link, readAt, createdAt] of notifs) {
+    insertNotif.run(id, DEFAULT_WORKSPACE_ID, DEMO_PROJECT_ID, DEFAULT_USER_ID, kind, title, body, link, readAt, createdAt);
   }
 }
 

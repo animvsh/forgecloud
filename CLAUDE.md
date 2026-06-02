@@ -67,23 +67,28 @@ The schema is initialized lazily on first `getDb()` call. Tables and their roles
 
 | Table | Purpose |
 | --- | --- |
-| `users`, `workspaces`, `team_members` | Single seeded user "Animesh" + workspace + a few human/AI reviewers. |
-| `projects` | One project per workspace; the seed creates `proj-pielot-waitlist` as the demo. |
+| `users`, `workspaces`, `team_members` | Single seeded user "Sal" (owner of Pleasure Pizza) + workspace + a few human/AI reviewers. |
+| `projects` | One workspace can hold multiple projects; the seed creates `proj-pleasure-pizza` as the demo. |
 | `agents` | 9 typed agents per project (product, design, frontend, backend, qa, devops, auth, safety, recovery) — see `AGENT_DEFS` in `lib/agents.ts`. Each has a primary + fallback model. |
 | `tasks` | Kanban-style: `backlog → building → review → done`. Assigned to an agent, optionally reviewed by a human. |
 | `pull_requests`, `changes` | Plain-English PRs created when an agent "ships" a task. `risk_level` drives whether an `approvals` row is created. |
 | `approvals` | Pending human-approval queue. `decideApproval()` resolves it and updates the linked PR + task. |
 | `agent_runs` | Per-task execution log (model used, fallback flag, status). |
-| `recovery_events` | The hackathon's hero feature — every simulated failure becomes a recovery row with a Claude-narrated explanation. |
+| `recovery_events` | The hackathon's hero feature — every simulated failure becomes a recovery row with an LLM-narrated explanation. |
 | `deployments` | Preview / staging / production records with URLs and status. |
-| `chat_messages` | Conversation between the user and the "Product Agent" (Claude); the seeded `metadata` JSON carries plan + taskIds for rendering plan cards inline. |
-| `preview_comments` | Inline comments left on the preview screen, turned into tasks. |
+| `chat_messages` | Conversation between the user and the "Product Agent"; the seeded `metadata` JSON carries plan + taskIds for rendering plan cards inline. |
+| `preview_comments` | Inline comments left on the preview screen, turned into tasks via LLM. |
+| `notifications` | Workspace-scoped activity feed (PR opened, approval needed, deploy live, secret blocked, …). Powers the bell + dropdown in the nav. |
+| `branches`, `commits`, `worktrees` | Git-like primitives. Every PR has a `branches` row and one or more `commits`; `worktrees` represent the parallel sandboxes assigned to agents. None of this touches a real git repo — see `src/lib/vcs.ts`. |
+| `connections`, `discoveries`, `suggested_apps` | The "Lovable funnel" — what tools the workspace has connected (Gmail / Sheets / Calendar / Slack / Stripe / Notion / HubSpot / Shopify), what scanning those tools turned up, and the ready-made app templates ForgeCloud suggests as a result. |
 
 ### Seeding (`src/lib/seed.ts`)
 
-`ensureSeed()` is called at the top of every API handler. It creates Animesh + workspace + the **Pielot Waitlist** demo project (tasks, PRs, recovery events, deployments, chat history) **only if** the user row is missing. If the demo project alone is missing (e.g. after `/api/reset`), it re-runs `seedDemoProject()` to repopulate it. IDs are stable strings (`task-1`, `pr-3`, `agent-frontend-demo`, etc.) so the seeded data is referentially safe to re-insert with `INSERT OR REPLACE`.
+`ensureSeed()` is called at the top of every API handler. It creates Sal + the Pleasure Pizza workspace + the **Pleasure Pizza Ops** demo project (12 tasks, 5 PRs, 16 per-file changes, 5 recovery events, 5 branches with commits, 3 worktrees, 5 notifications, chat history) **only if** the user row is missing. If the demo project alone is missing (e.g. after `/api/reset`), it re-runs `seedDemoProject()` to repopulate it. IDs are stable strings (`task-1`, `pr-3`, `agent-frontend-demo`, `branch-2`, `notif-1`, etc.) so the seeded data is referentially safe to re-insert.
 
-`getCurrentProjectId()` in `api-handler.ts` prefers the demo project; if it's gone it falls back to the most recently created project, and if none exists it creates an untitled one. The app is implicitly single-project.
+`seedConnectorsAndSuggestions()` separately seeds the 8 connectors (with Gmail/Sheets/Calendar pre-connected), the 6 discoveries, and the 5 suggested apps. It uses `INSERT OR IGNORE` so user actions (connecting Slack/Stripe etc.) are not overwritten on the next request.
+
+`getCurrentProjectId()` in `api-handler.ts` prefers the demo project; if it's gone it falls back to the most recently created project, and if none exists it creates an untitled one. The app supports multiple projects per workspace — the `ProjectSwitcher` component lists them.
 
 ### AI layer (`src/lib/ai.ts` + `src/lib/providers/*`)
 
@@ -120,6 +125,38 @@ Every API handler is wrapped with:
 This is the demo's centerpiece. `/api/inject-failure` and the optional `failureType` param on `/api/run-task` / `/api/run-all` produce different recovery narratives. The full set of failure types (`model_timeout`, `build_failed`, `secret_detected`, `unsafe_db_migration`, `deploy_failed`, `bad_output`, `rate_limit`, `agent_conflict`) is enumerated with default messages in `handleInjectFailure`. `unsafe_db_migration` is special — it also enqueues a high-risk approval. Secret detection (`detectSecret` in `lib/agents.ts`) runs on every chat message and blocks it before persistence.
 
 `/api/run-full-demo` is the one-click scripted demo: runs every backlog task, fails the third one, then injects a model_timeout + a secret_block + a successful preview deploy. Use it (or the "Try the demo" button on `/`) to set up the screens for a recording.
+
+### The three flows (Lovable / GitHub / Linear)
+
+The nav is grouped by intent. Each pill section maps to one of the three product flows:
+
+1. **Build (Lovable):** `/app` · `/app/connect` (pick Gmail/Sheets/Calendar/Slack/Stripe/Notion/HubSpot/Shopify) · `/app/discoveries` (what scanning found) · `/app/suggested-apps` (templates like "Pizza Ops Dashboard") · `/app/chat` (free-form requests) · `/app/preview` (live iframe + Comment-mode + Blame-mode toggles).
+2. **Review (GitHub):** `/app/changes` (plain-English PRs with per-file changes, risk-check matrix, Ask AI to explain, Rollback, Request edits) · `/app/branches` (branches + commits + worktrees) · `/app/failures` (recovery timeline + 8 failure-injection buttons).
+3. **Track (Linear):** `/app/tasks` (kanban + manual "+ Add task") · `/app/agents` (cards drilling into `/app/agents/$agentId` activity timelines) · `/app/deployments` · `/app/team` · `/app/report` · `/app/settings`.
+
+### Vibecoding endpoints (`/api/*`)
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/health` | Readiness/liveness; Railway healthcheck. |
+| `GET` | `/api/state` | The whole-world poll — every other screen reads from this. |
+| `GET` | `/api/agent-runs?agentId=…` | Activity timeline for `/app/agents/$agentId`. |
+| `GET` | `/api/notifications` | Bell dropdown source. |
+| `POST` | `/api/notifications/read[-all]` | Mark notifications read. |
+| `GET` | `/api/branches`, `/api/commits?branchId=`, `/api/worktrees` | Git-like primitives. |
+| `POST` | `/api/branches/{merge,archive}`, `/api/worktrees` | Merge / archive / spawn sandbox. |
+| `GET` | `/api/connections`, `/api/suggested-apps` | Funnel data. |
+| `POST` | `/api/connect`, `/api/disconnect`, `/api/scan` | Toggle a connector + rescan. |
+| `POST` | `/api/build-app` | Kick off building a suggested app (creates the seeded tasks). |
+| `POST` | `/api/intake`, `/api/chat` | LLM-powered plan generation & in-app conversation. |
+| `POST` | `/api/explain`, `/api/blame` | LLM-backed Ask AI explain (Changes) and Plain-English Blame (Preview). |
+| `POST` | `/api/comment` | Submit a preview comment → LLM turns it into a routed task. |
+| `POST` | `/api/add-task` | Manual task creation from the Tasks board. |
+| `POST` | `/api/run-task`, `/api/run-all`, `/api/run-full-demo`, `/api/inject-failure` | Agent execution + scripted demo + failure injection. |
+| `POST` | `/api/approval`, `/api/approve-pr`, `/api/rollback-pr`, `/api/request-edits` | PR lifecycle controls. |
+| `POST` | `/api/deploy`, `/api/deploy-production` | Trigger preview / production deploys. |
+| `POST` | `/api/projects` | Multi-project support — create a new project in the workspace. |
+| `POST` | `/api/reset` | Wipe the demo project's data (the connectors/discoveries/suggestions survive). |
 
 ## Conventions and gotchas
 
