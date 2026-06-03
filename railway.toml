@@ -2,7 +2,7 @@
 # Picked up automatically by Railway; prefer this file over railway.json when both exist.
 
 [build]
-builder = "NIXPACKS"
+builder = "DOCKERFILE"
 
 [deploy]
 startCommand = "node server-entry.mjs"
