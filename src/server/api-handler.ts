@@ -337,22 +337,29 @@ async function handleIntake(
   const data = parsed.data;
 
   ensureSeed();
-  const projectId = await getCurrentProjectId();
-  const project = getProject(projectId)!;
   const d = getDb();
-  d.prepare(`UPDATE projects SET name = ?, description = ?, status = 'planning' WHERE id = ?`).run(
-    data.projectName || project.name,
-    `${data.userType} • ${data.firstVersion} • ${data.style}`,
+  // Intake creates a NEW project, named after what the user said they're building.
+  // The previous behavior (renaming the active project) made "build a waitlist"
+  // overwrite the demo project, which broke the multi-project story.
+  const projectId = ids.newProject();
+  d.prepare(
+    `INSERT INTO projects (id, workspace_id, name, description, status, created_at) VALUES (?, ?, ?, ?, 'planning', ?)`,
+  ).run(
     projectId,
+    ids.workspace,
+    data.projectName,
+    `${data.userType} • ${data.firstVersion} • ${data.style}`,
+    Date.now(),
   );
-  // Only create agents if the project has none — otherwise /api/intake on the
-  // canonical demo project would create duplicate agents every time.
-  const existingAgents = d
-    .prepare("SELECT COUNT(*) AS c FROM agents WHERE project_id = ?")
-    .get(projectId) as { c: number };
-  if (existingAgents.c === 0) createAgentsForProject(projectId);
+  // Activate the new project so the user lands on it after submit.
+  d.prepare(
+    `INSERT INTO workspace_prefs (workspace_id, key, value, updated_at) VALUES (?, 'activeProjectId', ?, ?)
+     ON CONFLICT(workspace_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  ).run(ids.workspace, projectId, Date.now());
+  // Fresh project = fresh 9-agent team.
+  createAgentsForProject(projectId);
   const prompt =
-    data.rawPrompt ?? `Build a ${data.firstVersion} for ${data.userType}. Style: ${data.style}.`;
+    data.rawPrompt ?? `Build a ${data.firstVersion} for ${userTypeLine(data)}. Style: ${data.style}.`;
   const plan: BuildPlan = await generateBuildPlan(prompt);
   const tasks = createTasksFromPlan(projectId, plan, data.reviewers ?? ["Animesh"]);
   d.prepare(
@@ -364,6 +371,10 @@ async function handleIntake(
     JSON.stringify({ kind: "plan", plan, taskIds: tasks.map((t) => t.id) }),
   );
   sendJson(res, 200, { project: getProject(projectId), plan, tasks }, requestId);
+}
+
+function userTypeLine(data: { userType: string; firstVersion: string }): string {
+  return `${data.userType} (${data.firstVersion})`;
 }
 
 const ChatSchema = z.object({ message: z.string().min(1).max(4000) });
