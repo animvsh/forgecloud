@@ -445,6 +445,31 @@ export function seedDemoProject() {
     now - 1000 * 60 * 60 * 2,
   );
 
+  // Historical staging + production deploys so the Deployments screen
+  // shows realistic activity on a fresh seed (audit finding #1).
+  const historicalDeploys: Array<[string, string, "staging" | "production", "live" | "failed", string | null, number]> = [
+    ["dep-2", "pr-2", "staging",    "live",   "https://staging-pleasure-pizza.railway.app",  now - 1000 * 60 * 60 * 5],
+    ["dep-3", "pr-1", "production", "live",   "https://app-pleasure-pizza.railway.app",      now - 1000 * 60 * 60 * 3],
+    ["dep-4", "pr-3", "production", "failed", null,                                          now - 1000 * 60 * 30],
+  ];
+  for (const [id, prId, env, status, url, ts] of historicalDeploys) {
+    db.prepare(
+      `INSERT OR REPLACE INTO deployments (id, project_id, pr_id, environment, status, railway_url, cloudflare_url, build_logs, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      id,
+      DEMO_PROJECT_ID,
+      prId,
+      env,
+      status,
+      url,
+      null,
+      status === "failed"
+        ? "Railway deploy timed out after 90s — kept previous live version"
+        : "Build succeeded at " + new Date(ts).toISOString(),
+      ts,
+    );
+  }
+
   // Chat messages seeded.
   const chatMsgs: Array<[string, string, string, string | null, number]> = [
     [

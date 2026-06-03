@@ -1515,7 +1515,6 @@ async function handleBlame(req: IncomingMessage, res: ServerResponse, requestId:
 // Multi-project
 const NewProjectSchema = z.object({ name: z.string().min(1).max(120), description: z.string().max(500).optional() });
 async function handleNewProject(req: IncomingMessage, res: ServerResponse, requestId: string) {
-  console.log("[BUILD-TEST-2026-06-03] handleNewProject called with FIX-ACTIVE-PROJECT-2026");
   const parsed = NewProjectSchema.safeParse(await readJsonBody(req));
   if (!parsed.success) return sendError(res, 400, "Invalid payload", requestId, { issues: parsed.error.issues });
   const d = getDb();
