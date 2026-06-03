@@ -94,7 +94,7 @@ function FailuresScreen() {
             ].map((f) => (
               <button
                 key={f.type}
-                onClick={() => injectFailure({ type: f.type })}
+                onClick={() => injectFailure(f.type)}
                 disabled={busy !== null}
                 className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-40"
               >
