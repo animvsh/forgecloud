@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Users, Bot, Loader2 } from "lucide-react";
 import { useForgeState } from "@/lib/client";
@@ -81,7 +81,12 @@ function TeamScreen() {
               };
               const color = colors[a.type] ?? "var(--violet)";
               return (
-                <div key={a.id} className="rounded-2xl border border-border bg-card p-5 card-hover">
+                <Link
+                  key={a.id}
+                  to="/app/agents/$agentId"
+                  params={{ agentId: a.id }}
+                  className="block rounded-2xl border border-border bg-card p-5 card-hover hover:border-brand/40 hover:shadow-md transition-all"
+                >
                   <div className="flex items-center gap-3">
                     <div className="flex size-10 items-center justify-center squircle" style={{ background: color }}>
                       <Bot className="size-5 text-white" />
@@ -102,7 +107,7 @@ function TeamScreen() {
                       </div>
                     )}
                   </div>
-                </div>
+                </Link>
               );
             })}
           </div>

@@ -766,6 +766,8 @@ export function recordDeployment(
 ): string {
   const db = getDb();
   const id = ids.newDeployment();
+  const railwayUrl =
+    url ?? (environment === "preview" ? `https://preview-${Date.now()}.forgecloud.dev` : null);
   db.prepare(
     `INSERT INTO deployments (id, project_id, pr_id, environment, status, railway_url, cloudflare_url, build_logs, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -775,7 +777,7 @@ export function recordDeployment(
     prId,
     environment,
     status,
-    environment === "preview" ? url ?? `https://preview-${Date.now()}.forgecloud.dev` : null,
+    railwayUrl,
     null,
     failureMessage ?? `Build succeeded at ${new Date().toISOString()}`,
     Date.now(),

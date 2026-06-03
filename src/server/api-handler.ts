@@ -1523,6 +1523,12 @@ async function handleNewProject(req: IncomingMessage, res: ServerResponse, reque
     `INSERT INTO projects (id, workspace_id, name, description, status) VALUES (?, ?, ?, ?, 'intake')`,
   ).run(id, ids.workspace, parsed.data.name, parsed.data.description ?? null);
   createAgentsForProject(id);
+  // Activate the new project immediately so the workspace jumps to it
+  // (matches the behavior of the project switcher).
+  d.prepare(
+    `INSERT INTO workspace_prefs (workspace_id, key, value, updated_at) VALUES (?, 'activeProjectId', ?, ?)
+     ON CONFLICT(workspace_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  ).run(ids.workspace, id, Date.now());
   createNotification({
     workspaceId: ids.workspace,
     projectId: id,
@@ -1531,7 +1537,7 @@ async function handleNewProject(req: IncomingMessage, res: ServerResponse, reque
     body: parsed.data.description ?? "Workspace ready.",
     link: "/app/intake",
   });
-  sendJson(res, 200, { ok: true, project: getProject(id) }, requestId);
+  sendJson(res, 200, { ok: true, project: getProject(id), activeProjectId: id }, requestId);
 }
 async function handleListProjects(_req: IncomingMessage, res: ServerResponse, requestId: string) {
   const d = getDb();
