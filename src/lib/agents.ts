@@ -636,24 +636,41 @@ export function decideApproval(
   db.prepare(
     `UPDATE approvals SET status = ?, approver_name = ?, decided_at = ? WHERE id = ?`,
   ).run(decision === "approve" ? "approved" : "rejected", approverName, Date.now(), approvalId);
-  const approval = db.prepare("SELECT * FROM approvals WHERE id = ?").get(approvalId) as { pr_id: string | null; project_id: string };
+  const approval = db.prepare("SELECT * FROM approvals WHERE id = ?").get(approvalId) as { pr_id: string | null; project_id: string; kind: string | null };
   let pr: PullRequest | null = null;
+  // Helper: find the task linked to a PR either via the reverse link
+  // (tasks.linked_pr_id) or the forward link (pull_requests.task_id). The
+  // seed populates only the forward direction, so the reverse lookup misses
+  // every seeded PR and the linked task never moves on approve/reject.
+  const taskIdForPr = (prId: string): string | null => {
+    const t = db
+      .prepare("SELECT id FROM tasks WHERE linked_pr_id = ?")
+      .get(prId) as { id: string } | undefined;
+    if (t) return t.id;
+    const p = db
+      .prepare("SELECT task_id FROM pull_requests WHERE id = ?")
+      .get(prId) as { task_id: string | null } | undefined;
+    return p?.task_id ?? null;
+  };
   if (approval?.pr_id) {
     if (decision === "approve") {
+      const now = Date.now();
       db.prepare(
-        `UPDATE pull_requests SET status = 'approved', approver_name = ?, approved_at = ? WHERE id = ?`,
-      ).run(approverName, Date.now(), approval.pr_id);
-      db.prepare(
-        `UPDATE tasks SET status = 'done' WHERE linked_pr_id = ?`,
-      ).run(approval.pr_id);
+        `UPDATE pull_requests SET status = 'approved', approver_name = ?, approved_at = ?, merged_at = ? WHERE id = ?`,
+      ).run(approverName, now, now, approval.pr_id);
+      const taskId = taskIdForPr(approval.pr_id);
+      if (taskId) {
+        db.prepare(`UPDATE tasks SET status = 'done' WHERE id = ?`).run(taskId);
+      }
     } else {
       db.prepare(
         `UPDATE pull_requests SET status = 'rejected' WHERE id = ?`,
       ).run(approval.pr_id);
       // M1: rejection must unstick the task so the user can retry it.
-      db.prepare(
-        `UPDATE tasks SET status = 'backlog' WHERE linked_pr_id = ?`,
-      ).run(approval.pr_id);
+      const taskId = taskIdForPr(approval.pr_id);
+      if (taskId) {
+        db.prepare(`UPDATE tasks SET status = 'backlog' WHERE id = ?`).run(taskId);
+      }
     }
     pr = db.prepare("SELECT * FROM pull_requests WHERE id = ?").get(approval.pr_id) as PullRequest;
     const wsId = workspaceOfProject(approval.project_id);
@@ -664,6 +681,22 @@ export function decideApproval(
         kind: decision === "approve" ? "pr_approved" : "pr_rejected",
         title: decision === "approve" ? `PR #${pr.number} approved by ${approverName}` : `PR #${pr.number} rejected by ${approverName}`,
         body: pr.title,
+        link: "/app/changes",
+      });
+    }
+  } else {
+    // No linked PR (e.g. the unsafe_db_migration approval gate is on the
+    // task itself). Still surface the decision so the user knows it landed.
+    const wsId = workspaceOfProject(approval.project_id);
+    if (wsId) {
+      createNotification({
+        workspaceId: wsId,
+        projectId: approval.project_id,
+        kind: decision === "approve" ? "pr_approved" : "pr_rejected",
+        title: decision === "approve"
+          ? `${approval.kind ?? "Approval"} approved by ${approverName}`
+          : `${approval.kind ?? "Approval"} rejected by ${approverName}`,
+        body: "This change was gated outside a pull request.",
         link: "/app/changes",
       });
     }

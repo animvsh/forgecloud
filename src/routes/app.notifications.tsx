@@ -28,6 +28,7 @@ const KIND_LABELS: Record<string, string> = {
   pr_rolled_back: "PR rolled back",
   approval_needed: "Approval needed",
   secret_blocked: "Secret blocked",
+  guardrail_blocked: "Guardrail blocked",
   deploy_live: "Deploy live",
   deploy_failed: "Deploy failed",
   task_created: "Task created",

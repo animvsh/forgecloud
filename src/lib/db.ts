@@ -29,6 +29,19 @@ export function getDb(): Database.Database {
 }
 
 function initSchema(db: Database.Database) {
+  // Additive migrations for columns added after the initial schema. Each
+  // ALTER is wrapped to swallow "duplicate column" errors so re-runs are
+  // safe. New tables are still created via CREATE TABLE IF NOT EXISTS below.
+  const addColumn = (table: string, col: string, def: string) => {
+    try {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+    } catch (e) {
+      if (!(e as Error).message.includes("duplicate column")) throw e;
+    }
+  };
+  addColumn("pull_requests", "merged_at", "INTEGER");
+  addColumn("pull_requests", "rolled_back_at", "INTEGER");
+  addColumn("pull_requests", "rolled_back_by", "TEXT");
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -134,6 +147,9 @@ function initSchema(db: Database.Database) {
       requires_approval INTEGER NOT NULL DEFAULT 0,
       approver_name TEXT,
       approved_at INTEGER,
+      merged_at INTEGER,
+      rolled_back_at INTEGER,
+      rolled_back_by TEXT,
       created_by_agent_id TEXT,
       files_changed INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),

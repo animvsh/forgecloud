@@ -395,10 +395,13 @@ async function handleChat(
         .get(projectId) as { workspace_id: string } | undefined;
       if (wsRow) {
         const { createNotification } = await import("../lib/vcs");
+        // Distinguish real secret detection from profanity / dangerous-action
+        // blocks in the bell + notifications screen. Conflating them made the
+        // notification feed look like every chat was leaking a credential.
         createNotification({
           workspaceId: wsRow.workspace_id,
           projectId,
-          kind: "secret_blocked",
+          kind: hit.kind === "secret" ? "secret_blocked" : "guardrail_blocked",
           title: `Safety Agent blocked: ${hit.title}`,
           body: `Matched "${hit.match.slice(0, 80)}". Edit your request and try again.`,
           link: "/app/failures",
@@ -827,6 +830,13 @@ async function handleRequestEdits(
   if (!pr) return sendError(res, 404, "PR not found", requestId);
 
   d.prepare(`UPDATE pull_requests SET status = 'changes_requested' WHERE id = ?`).run(pr.id);
+  // Send the original task back to building so the agent can pick it up
+  // again — otherwise the PR is "stuck" with no path to resolution.
+  if (pr.task_id) {
+    d.prepare(
+      `UPDATE tasks SET status = 'backlog' WHERE id = ? AND status IN ('review', 'done')`,
+    ).run(pr.task_id);
+  }
   const tasks = createTasksFromPlan(
     pr.project_id,
     {

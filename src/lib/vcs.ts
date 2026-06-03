@@ -144,6 +144,7 @@ export type NotificationKind =
   | "pr_rolled_back"
   | "approval_needed"
   | "secret_blocked"
+  | "guardrail_blocked"
   | "deploy_live"
   | "deploy_failed"
   | "recovery"

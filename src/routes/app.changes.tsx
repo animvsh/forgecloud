@@ -64,6 +64,7 @@ type PR = {
   screenshot_url?: string | null;
   approved_at?: string | null;
   approver_name?: string | null;
+  merged_at?: number | null;
   requires_approval: number;
   changes?: ChangeRow[];
   riskChecks?: RiskChecks;
@@ -452,13 +453,15 @@ function ChangesScreen() {
                           )}
                           Approve
                         </button>
-                        <button
-                          onClick={() => setConfirmRollbackId(p.id)}
-                          disabled={rollingBackId === p.id}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors disabled:opacity-40"
-                        >
-                          <Undo2 className="size-3" /> Rollback
-                        </button>
+                        {p.merged_at ? (
+                          <button
+                            onClick={() => setConfirmRollbackId(p.id)}
+                            disabled={rollingBackId === p.id}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors disabled:opacity-40"
+                          >
+                            <Undo2 className="size-3" /> Rollback
+                          </button>
+                        ) : null}
                         <button
                           onClick={() => openExplainForPr(p)}
                           disabled={explainLoadingFor === p.id}

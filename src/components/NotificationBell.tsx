@@ -34,6 +34,7 @@ const KIND_ICONS: Record<string, typeof Bell> = {
   pr_rolled_back: Undo2,
   approval_needed: AlertTriangle,
   secret_blocked: ShieldAlert,
+  guardrail_blocked: ShieldAlert,
   deploy_live: Rocket,
   deploy_failed: AlertOctagon,
   task_created: ListChecks,
