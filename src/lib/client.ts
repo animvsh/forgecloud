@@ -323,3 +323,12 @@ export function useBuildSuggestedApp() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }
+
+export function useBuildFromTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { appId: string }) =>
+      apiPost<{ ok: true; project: any; tasks: any[] }>("/api/build-app", vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}

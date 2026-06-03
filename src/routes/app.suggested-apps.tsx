@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ArrowRight, Check, Hammer, Loader2, Sparkles } from "lucide-react";
-import { useBuildSuggestedApp, useForgeState } from "@/lib/client";
+import { useBuildSuggestedApp, useForgeState, useRunAllTasks } from "@/lib/client";
 import { ScreenHeader } from "@/components/ScreenHeader";
 
 export const Route = createFileRoute("/app/suggested-apps")({
@@ -57,6 +57,7 @@ function SuggestedAppsScreen() {
   const navigate = useNavigate();
   const { data, isLoading } = useForgeState();
   const buildMutation = useBuildSuggestedApp();
+  const runAll = useRunAllTasks();
   const [busyId, setBusyId] = useState<string | null>(null);
 
   if (isLoading || !data) {
@@ -80,9 +81,17 @@ function SuggestedAppsScreen() {
   async function handleBuild(app: SuggestedApp) {
     setBusyId(app.id);
     try {
-      await buildMutation.mutateAsync({ appId: app.id });
+      const result = (await buildMutation.mutateAsync({ appId: app.id })) as { tasks?: any[] } | undefined;
+      const total = result?.tasks?.length ?? 0;
+      // Auto-run the agents in the background; the 2.5s poll on /app picks up
+      // the live building state.
+      runAll.mutateAsync({}).catch((err) => {
+        console.error("auto run-all failed", err);
+      });
       toast.success(`Started building ${app.title}`, {
-        description: "Agents are kicking off the first tasks now.",
+        description: total
+          ? `Spinning up agents on ${total} task${total === 1 ? "" : "s"}.`
+          : "Agents are kicking off the first tasks now.",
       });
       navigate({ to: "/app" });
     } catch (err) {

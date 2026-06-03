@@ -1,7 +1,8 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { toast } from "sonner";
 import { ArrowRight, ArrowLeft, Sparkles, Loader2, Zap, Plus, X } from "lucide-react";
-import { useStartIntake, useForgeState, useSkipToDemo } from "@/lib/client";
+import { useStartIntake, useForgeState, useSkipToDemo, useRunAllTasks } from "@/lib/client";
 
 export const Route = createFileRoute("/app/intake")({
   head: () => ({ meta: [{ title: "New project — ForgeCloud" }] }),
@@ -21,6 +22,7 @@ function IntakeScreen() {
   const { data } = useForgeState();
   const intake = useStartIntake();
   const skip = useSkipToDemo();
+  const runAll = useRunAllTasks();
   const [step, setStep] = useState(0);
   const [projectName, setProjectName] = useState<string>(STEPS[0].defaultValue);
   const [userType, setUserType] = useState<string>(STEPS[1].defaultValue);
@@ -45,7 +47,7 @@ function IntakeScreen() {
 
   async function submit() {
     const rawPrompt = `Build a ${firstVersion} for ${userType}. Style: ${style}. Login: ${needsLogin ? "yes" : "no"}.`;
-    await intake.mutateAsync({
+    const result = (await intake.mutateAsync({
       projectName: projectName.trim(),
       userType: userType.trim(),
       firstVersion: firstVersion.trim(),
@@ -53,6 +55,18 @@ function IntakeScreen() {
       style: style.trim(),
       reviewers,
       rawPrompt,
+    })) as { tasks?: any[]; plan?: any } | undefined;
+    const total = result?.tasks?.length ?? 0;
+    const planName = projectName.trim() || "your project";
+    // Kick off the agents in the background — don't block navigation. The
+    // 2.5s poll on /app will pick up the live building status immediately.
+    runAll.mutateAsync({}).catch((err) => {
+      console.error("auto run-all failed", err);
+    });
+    toast.success(`Plan ready — building ${planName}`, {
+      description: total
+        ? `Spinning up agents on ${total} task${total === 1 ? "" : "s"}.`
+        : "Spinning up agents now.",
     });
     navigate({ to: "/app" });
   }

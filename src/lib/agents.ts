@@ -371,7 +371,7 @@ async function runTaskSuccess(
     prId,
     message: summary.split("\n")[0].slice(0, 100),
     author: agent?.name ?? "Agent",
-    filesChanged: fileAreas.length,
+    filesChanged: codeFiles.length,
   });
 
   // Notify the workspace.
