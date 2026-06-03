@@ -13,7 +13,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 
-import { ensureSeed, ids, seedDemoProject } from "../lib/seed";
+import { ensureSeed, ids, scaffoldDemoProject, populateDemoData } from "../lib/seed";
 import { getDb, type Change, type Project, type Task, type User, type Workspace } from "../lib/db";
 import {
   approvePr,
@@ -345,7 +345,12 @@ async function handleIntake(
     `${data.userType} • ${data.firstVersion} • ${data.style}`,
     projectId,
   );
-  createAgentsForProject(projectId);
+  // Only create agents if the project has none — otherwise /api/intake on the
+  // canonical demo project would create duplicate agents every time.
+  const existingAgents = d
+    .prepare("SELECT COUNT(*) AS c FROM agents WHERE project_id = ?")
+    .get(projectId) as { c: number };
+  if (existingAgents.c === 0) createAgentsForProject(projectId);
   const prompt =
     data.rawPrompt ?? `Build a ${data.firstVersion} for ${data.userType}. Style: ${data.style}.`;
   const plan: BuildPlan = await generateBuildPlan(prompt);
@@ -539,13 +544,67 @@ async function handleRunAll(
   sendJson(res, 200, { results }, requestId);
 }
 
+async function ensureDemoDataPopulated(): Promise<void> {
+  const d = getDb();
+  const pref = d
+    .prepare(
+      "SELECT value FROM workspace_prefs WHERE workspace_id = ? AND key = 'demoDataPopulated'",
+    )
+    .get(ids.workspace) as { value: string } | undefined;
+  if (pref?.value === "true") return; // already populated
+  // Check whether there's any data to know if the user has already populated
+  // once but the pref got cleared (e.g. on reset). If the project is empty,
+  // re-populate.
+  const taskCount = d
+    .prepare("SELECT COUNT(*) AS c FROM tasks WHERE project_id = ?")
+    .get(DEMO_PROJECT_ID) as { c: number };
+  if (taskCount.c > 0) {
+    d.prepare(
+      `INSERT INTO workspace_prefs (workspace_id, key, value, updated_at) VALUES (?, 'demoDataPopulated', 'true', ?)
+       ON CONFLICT(workspace_id, key) DO UPDATE SET value = 'true', updated_at = excluded.updated_at`,
+    ).run(ids.workspace, Date.now());
+    return;
+  }
+  // Re-derive agent IDs from the agents table (scaffold was run by ensureSeed).
+  const agentIds: Record<string, string> = {};
+  const rows = d
+    .prepare("SELECT id, type FROM agents WHERE project_id = ?")
+    .all(DEMO_PROJECT_ID) as { id: string; type: string }[];
+  for (const r of rows) agentIds[r.type] = r.id;
+  populateDemoData(agentIds);
+  d.prepare(
+    `INSERT INTO workspace_prefs (workspace_id, key, value, updated_at) VALUES (?, 'demoDataPopulated', 'true', ?)
+     ON CONFLICT(workspace_id, key) DO UPDATE SET value = 'true', updated_at = excluded.updated_at`,
+  ).run(ids.workspace, Date.now());
+}
+
+async function handleSeedDemo(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string,
+): Promise<void> {
+  await ensureDemoDataPopulated();
+  sendJson(res, 200, { ok: true }, requestId);
+}
+
 async function handleRunFullDemo(
   _req: IncomingMessage,
   res: ServerResponse,
   requestId: string,
 ): Promise<void> {
-  const projectId = await getCurrentProjectId();
+  // "Try the demo" must always run on the canonical seeded project,
+  // regardless of which project is currently active — otherwise users with
+  // an empty new project see a blank demo.
   const d = getDb();
+  const demo = d.prepare("SELECT id FROM projects WHERE id = ?").get(DEMO_PROJECT_ID) as
+    | { id: string }
+    | undefined;
+  if (!demo) return sendError(res, 500, "Demo project missing", requestId);
+  const projectId = demo.id;
+  // Make sure the demo data is populated. The /api/seed-demo endpoint is
+  // also exposed for the "Try the demo" button; this is a belt-and-suspenders
+  // fallback in case the UI didn't seed first.
+  await ensureDemoDataPopulated();
   const backlog = d
     .prepare(
       "SELECT * FROM tasks WHERE project_id = ? AND status = 'backlog' ORDER BY created_at ASC",
@@ -619,10 +678,20 @@ async function handleSkipToDemo(
   // (Tasks, Agents, PRs, Preview) shows the same content the demo screenshot
   // walkthrough uses.
   ensureSeed();
+  // Skip-to-demo is an explicit "I want the populated demo state" action,
+  // so re-populate tasks/PRs/deploys/recovery/etc. here.
   try {
-    seedDemoProject();
+    const agentIds: Record<string, string> = {};
+    const d2 = getDb();
+    const rows = d2.prepare("SELECT id, type FROM agents WHERE project_id = ?").all(DEMO_PROJECT_ID) as { id: string; type: string }[];
+    for (const r of rows) agentIds[r.type] = r.id;
+    populateDemoData(agentIds);
+    d2.prepare(
+      `INSERT INTO workspace_prefs (workspace_id, key, value, updated_at) VALUES (?, 'demoDataPopulated', 'true', ?)
+       ON CONFLICT(workspace_id, key) DO UPDATE SET value = 'true', updated_at = excluded.updated_at`,
+    ).run(ids.workspace, Date.now());
   } catch (err) {
-    // If re-seed fails (e.g. data race), the project still exists from ensureSeed.
+    // If re-populate fails (e.g. data race), the project still exists from ensureSeed.
   }
   sendJson(res, 200, { ok: true, project: "proj-pleasure-pizza" }, requestId);
 }
@@ -985,6 +1054,23 @@ async function handleReset(
 ): Promise<void> {
   const d = getDb();
   const projectId = await getCurrentProjectId();
+  // One-time dedup of agents per (project_id, type). Earlier versions of the
+  // app could create duplicate agents if /api/intake ran on the canonical demo
+  // project after the scaffold. The canonical agent for each type is
+  // `agent-${type}-demo`; we keep that and delete UUID-suffixed duplicates.
+  d.prepare(
+    `DELETE FROM agents
+     WHERE id != 'agent-product-demo'
+       AND id != 'agent-design-demo'
+       AND id != 'agent-frontend-demo'
+       AND id != 'agent-backend-demo'
+       AND id != 'agent-qa-demo'
+       AND id != 'agent-devops-demo'
+       AND id != 'agent-auth-demo'
+       AND id != 'agent-safety-demo'
+       AND id != 'agent-recovery-demo'
+       AND project_id = ?`,
+  ).run(DEMO_PROJECT_ID);
   // changes is keyed by pr_id, not project_id — wipe it via the PR join first.
   d.prepare(
     `DELETE FROM changes WHERE pr_id IN (SELECT id FROM pull_requests WHERE project_id = ?)`,
@@ -997,7 +1083,10 @@ async function handleReset(
     "agent_runs",
     "pull_requests",
     "tasks",
-    "agents",
+    // Note: "agents" is intentionally NOT in this list. Agents are part of the
+    // project scaffolding and survive a reset so the user can keep interacting
+    // with the (now empty) project. Re-scaffolding after the wipe below
+    // handles the edge case where agents were somehow missing.
     "preview_comments",
     "worktrees",
     "commits",
@@ -1008,26 +1097,34 @@ async function handleReset(
   d.prepare(`UPDATE projects SET status = 'intake' WHERE id = ?`).run(projectId);
   // Clean up any non-canonical projects created by past /api/intake or /api/projects
   // calls so the demo state stays tidy. The canonical project is preserved.
+  // For non-canonical projects we wipe EVERYTHING (including agents) because
+  // we're deleting the whole project; the canonical project keeps its agents
+  // (see the scaffold step below).
   const nonCanonical = d
     .prepare(`SELECT id FROM projects WHERE id != ?`)
     .all(DEMO_PROJECT_ID) as { id: string }[];
   if (nonCanonical.length > 0) {
+    const fullTables = [...tables, "agents"];
     for (const { id: pid } of nonCanonical) {
       d.prepare(
         `DELETE FROM changes WHERE pr_id IN (SELECT id FROM pull_requests WHERE project_id = ?)`,
       ).run(pid);
-      for (const t of tables) d.prepare(`DELETE FROM ${t} WHERE project_id = ?`).run(pid);
+      for (const t of fullTables) d.prepare(`DELETE FROM ${t} WHERE project_id = ?`).run(pid);
       d.prepare(`DELETE FROM notifications WHERE project_id = ?`).run(pid);
       d.prepare(`DELETE FROM projects WHERE id = ?`).run(pid);
     }
   }
-  // If the active project is the canonical Pleasure Pizza demo, re-seed it.
+  // Re-scaffold the canonical demo project so it always has its 9 agents.
   if (projectId === DEMO_PROJECT_ID) {
     try {
-      seedDemoProject();
-    } catch (err) {
-      // If re-seed fails (e.g. data race), leave the project empty — the user can /api/intake to start fresh.
+      scaffoldDemoProject();
+    } catch {
+      // If re-scaffold fails, the project still exists with whatever agents it had.
     }
+    d.prepare(
+      `INSERT INTO workspace_prefs (workspace_id, key, value, updated_at) VALUES (?, 'demoDataPopulated', 'false', ?)
+       ON CONFLICT(workspace_id, key) DO UPDATE SET value = 'false', updated_at = excluded.updated_at`,
+    ).run(ids.workspace, Date.now());
   }
   sendJson(res, 200, { ok: true }, requestId);
 }
@@ -1416,11 +1513,11 @@ async function handleBuildSuggestedApp(req: IncomingMessage, res: ServerResponse
 
 // Manual task creation
 const AddTaskSchema = z.object({
-  title: z.string().min(1).max(120),
-  description: z.string().max(800).optional(),
-  ownerAgent: z.string().min(1).max(60).optional(),
+  title: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(800).optional(),
+  ownerAgent: z.string().trim().min(1).max(60).optional(),
   riskLevel: z.enum(["low", "med", "high"]).optional(),
-  reviewer: z.string().max(60).optional(),
+  reviewer: z.string().trim().max(60).optional(),
 });
 async function handleAddTask(req: IncomingMessage, res: ServerResponse, requestId: string) {
   const parsed = AddTaskSchema.safeParse(await readJsonBody(req));
@@ -1513,7 +1610,10 @@ async function handleBlame(req: IncomingMessage, res: ServerResponse, requestId:
 }
 
 // Multi-project
-const NewProjectSchema = z.object({ name: z.string().min(1).max(120), description: z.string().max(500).optional() });
+const NewProjectSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(500).optional(),
+});
 async function handleNewProject(req: IncomingMessage, res: ServerResponse, requestId: string) {
   const parsed = NewProjectSchema.safeParse(await readJsonBody(req));
   if (!parsed.success) return sendError(res, 400, "Invalid payload", requestId, { issues: parsed.error.issues });
@@ -1644,6 +1744,12 @@ const ROUTES: Array<{
     pattern: /^\/api\/run-full-demo$/,
     handler: handleRunFullDemo,
     rate: RATE_CONFIGS.expensive,
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/seed-demo$/,
+    handler: handleSeedDemo,
+    rate: RATE_CONFIGS.cheap,
   },
   {
     method: "POST",

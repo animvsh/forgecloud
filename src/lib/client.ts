@@ -150,6 +150,14 @@ export function useRunFullDemo() {
   });
 }
 
+export function useSeedDemo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost<any>("/api/seed-demo", {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
+
 export function useSkipToDemo() {
   const qc = useQueryClient();
   return useMutation({

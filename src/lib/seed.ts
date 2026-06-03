@@ -21,7 +21,8 @@ export function ensureSeed(): { user: User; workspace: Workspace } {
     .get(DEFAULT_USER_ID) as User | undefined;
   if (existingUser) {
     const demoProject = db.prepare("SELECT * FROM projects WHERE id = ?").get(DEMO_PROJECT_ID);
-    if (!demoProject) seedDemoProject();
+    if (!demoProject) scaffoldDemoProject();
+    // populateDemoData() is opt-in — see /api/seed-demo.
     seedConnectorsAndSuggestions(); // idempotent
     const existingWs = db
       .prepare("SELECT * FROM workspaces WHERE id = ?")
@@ -50,7 +51,10 @@ export function ensureSeed(): { user: User; workspace: Workspace } {
     insertTm.run(id, ws, name, role, isAi, JSON.stringify(["approve", "request", "view"]));
   }
 
-  seedDemoProject();
+  scaffoldDemoProject();
+  // No auto-populate. The user starts with an empty project and must
+  // explicitly call /api/seed-demo (via "Try the demo") or create tasks
+  // via the intake wizard.
   seedConnectorsAndSuggestions();
 
   const user = db.prepare("SELECT * FROM users WHERE id = ?").get(DEFAULT_USER_ID) as User;
@@ -176,7 +180,7 @@ function seedConnectorsAndSuggestions() {
   }
 }
 
-export function seedDemoProject() {
+export function scaffoldDemoProject() {
   const db = getDb();
   const now = Date.now();
 
@@ -237,6 +241,15 @@ export function seedDemoProject() {
       0,
     );
   }
+  // NOTE: scaffoldDemoProject intentionally does NOT call populateDemoData().
+  // Demo data is opt-in via /api/seed-demo. Callers that want the full demo
+  // state must call populateDemoData() (with agentIds queried from the
+  // agents table) themselves.
+}
+
+export function populateDemoData(agentIds: Record<string, string>): void {
+  const db = getDb();
+  const now = Date.now();
 
   // Tasks (matching the spec's pizza shop scenario).
   const tasks: Array<[string, string, string, string, string, string, string, number]> = [

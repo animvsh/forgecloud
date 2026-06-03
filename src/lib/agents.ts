@@ -1,6 +1,6 @@
 import { getDb, type Agent, type Project, type Task, type PullRequest, type RecoveryEvent } from "./db";
 import { ensureSeed, ids } from "./seed";
-import { classifyRisk, generatePrSummary, narrateRecovery } from "./ai";
+import { classifyRisk, generatePrSummary, narrateRecovery, generateCode } from "./ai";
 import { getProvider } from "./providers";
 import { createNotification, findOrCreateBranchByName, recordCommit } from "./vcs";
 import { log as logger } from "./logger";
@@ -309,6 +309,15 @@ async function runTaskSuccess(
   const modifiesAuth = /auth|login|password|signup/i.test(task.title);
   const risk = await classifyRisk(task.title, task.description ?? "", modifiesDb, modifiesAuth, false);
 
+  // Generate real code files for this PR. The LLM produces 1-3 source files
+  // matching the task; we store them in `changes` so the PR view can show
+  // actual diffs instead of placeholder text.
+  const codeFiles = await generateCode(
+    task.title,
+    task.description ?? "",
+    agent?.name ?? "Frontend Agent",
+  );
+
   const prNumber = nextPrNumber(task.project_id);
   const prId = ids.newPR();
   const sourceBranch = `feature/${task.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}`;
@@ -331,22 +340,24 @@ async function runTaskSuccess(
     previewUrl,
     requiresApproval ? 1 : 0,
     agent?.id ?? null,
-    Math.max(1, Math.floor(Math.random() * 8) + 1),
+    codeFiles.length,
     Date.now(),
   );
 
-  const fileAreas = risk === "high" ? ["Database", "API", "UI"] : risk === "med" ? ["UI", "API"] : ["UI"];
+  // Persist each generated file as a change row. The `technical_diff` field
+  // holds the full file content (it was originally a diff string, but storing
+  // the code here is more useful for a demo than a hand-written diff).
   const changeInsert = db.prepare(
     `INSERT INTO changes (id, pr_id, file_path, technical_diff, plain_english_summary, risk_explanation, agent_id)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
   );
-  for (const area of fileAreas) {
+  for (const file of codeFiles) {
     changeInsert.run(
       ids.newChange(),
       prId,
-      `${area.toLowerCase()}/${task.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.ts`,
-      `+ added ${area} support for "${task.title}"\n- removed placeholder`,
-      `Added ${area.toLowerCase()} changes for "${task.title}"`,
+      file.path,
+      file.content,
+      `${agent?.name ?? "Agent"} added ${file.path} (${file.language})`,
       risk === "high" ? "Modifies database schema — review carefully" : null,
       agent?.id ?? null,
     );
@@ -496,7 +507,7 @@ const SECRET_PATTERNS = [
   // Generic "sk|pk|api_key|secret|token" + 6+ alphanum
   /(?:sk|pk|api[_-]?key|secret|token)[_-][a-zA-Z0-9]{6,}/i,
   // OpenAI project-style keys: sk-proj-… (20+ alphanum)
-  /sk-(?:proj-|ant-|test-|live-|org-)[A-Za-z0-9_\-]{16,}/i,
+  /sk-(?:proj-|ant-|test-|live-|org-|prod-)[A-Za-z0-9_\-]{16,}/i,
   // Anthropic API keys: sk-ant-api03-…
   /sk-ant-api03-[A-Za-z0-9_\-]{20,}/i,
   // Stripe live + test + restricted keys (real ones are much longer, but

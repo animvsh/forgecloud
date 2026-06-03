@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useForgeState, useRunAllTasks, useInjectFailure, useDeployProduction, useResetProject, useRunFullDemo } from "@/lib/client";
+import { useForgeState, useRunAllTasks, useInjectFailure, useDeployProduction, useResetProject, useRunFullDemo, useSeedDemo } from "@/lib/client";
 import { Sparkles, GitBranch, ShieldCheck, Rocket, AlertTriangle, ArrowRight, Loader2, RotateCcw, MessageSquare, Play, CheckCircle2, Circle } from "lucide-react";
 import { useState } from "react";
 import { ScreenHeader } from "@/components/ScreenHeader";
@@ -27,6 +27,7 @@ function ProjectHome() {
   const deploy = useDeployProduction();
   const reset = useResetProject();
   const runFullDemoMutation = useRunFullDemo();
+  const seedDemoMutation = useSeedDemo();
   const [busy, setBusy] = useState<string | null>(null);
   const [demoSteps, setDemoSteps] = useState<string[]>([]);
   const [demoComplete, setDemoComplete] = useState(false);
@@ -149,10 +150,26 @@ function ProjectHome() {
           <p className="mt-6 text-xs text-muted-foreground">
             Or open the chat and type any product idea.
           </p>
-          <div className="mt-4 flex items-center justify-center gap-2">
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
             <Link to="/app/chat" className="rounded-full border border-border bg-background px-4 py-2 text-sm hover:bg-muted transition-colors">
               Open chat
             </Link>
+            <button
+              onClick={async () => {
+                setBusy("seed");
+                try {
+                  await seedDemoMutation.mutateAsync();
+                  await runFullDemoMutation.mutateAsync();
+                } finally {
+                  setBusy(null);
+                }
+              }}
+              disabled={busy !== null}
+              className="inline-flex items-center gap-1.5 rounded-full border border-brand/40 bg-brand/10 px-4 py-2 text-sm font-medium text-brand hover:bg-brand/20 transition-colors disabled:opacity-40"
+            >
+              {busy === "seed" ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5 fill-current" />}
+              Try the demo
+            </button>
           </div>
         </div>
       )}
