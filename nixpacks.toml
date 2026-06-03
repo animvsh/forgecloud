@@ -8,7 +8,7 @@ nixPkgs = ["nodejs_20", "bun", "python311", "gcc", "gnumake", "pkg-config", "gyp
 cmds = ["npm install --include=dev --legacy-peer-deps"]
 
 [phases.build]
-cmds = ["rm -rf dist && bun run build"]
+cmds = ["echo build-$(date +%s) > .build-id", "rm -rf dist && bun run build"]
 
 [start]
 cmd = "node server-entry.mjs"
