@@ -305,9 +305,15 @@ async function runTaskSuccess(
     task.description ?? "",
     agent?.name ?? "Agent",
   );
-  const modifiesDb = task.risk_level === "high" || /database|schema|table|column|migration/i.test(task.title + " " + (task.description ?? ""));
-  const modifiesAuth = /auth|login|password|signup/i.test(task.title);
-  const risk = await classifyRisk(task.title, task.description ?? "", modifiesDb, modifiesAuth, false);
+  const modifiesDb = task.risk_level === "high" || /database|schema|table|column|migration|rls|alter table|drop table/i.test(task.title + " " + (task.description ?? ""));
+  const modifiesAuth = /auth|login|password|signup|signin|sign[- ]?up|sign[- ]?in|oauth|session|jwt|guard|permission|rbac|role[- ]?based|access[- ]?control/i.test(task.title);
+  // isProduction is detected from the title/description — the previous behavior
+  // hardcoded `false` here, so "production deploy pipeline" / "go-live" tasks
+  // never reached the high-risk branch.
+  const isProduction = /production|prod[- ]?deploy|go[- ]?live|release to prod|ship to prod|prod pipeline/i.test(
+    task.title + " " + (task.description ?? ""),
+  );
+  const risk = await classifyRisk(task.title, task.description ?? "", modifiesDb, modifiesAuth, isProduction);
 
   // Generate real code files for this PR. The LLM produces 1-3 source files
   // matching the task; we store them in `changes` so the PR view can show
