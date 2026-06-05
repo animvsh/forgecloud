@@ -37,6 +37,12 @@ type PreviewBlameMessage = {
   y: number;
 };
 
+type BlameProvenance = {
+  label: string;
+  detail: string;
+  kind: string;
+};
+
 function isPreviewClickMessage(value: unknown): value is PreviewClickMessage {
   if (!value || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
@@ -65,6 +71,8 @@ function PreviewScreen() {
   const [blameText, setBlameText] = useState<string>("");
   const [blameProvider, setBlameProvider] = useState<string>("");
   const [blamePrNumber, setBlamePrNumber] = useState<number | undefined>(undefined);
+  const [blameXtraceMode, setBlameXtraceMode] = useState<string>("");
+  const [blameProvenance, setBlameProvenance] = useState<BlameProvenance[]>([]);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -111,8 +119,11 @@ function PreviewScreen() {
   // Listen for clicks bubbling out of the iframe.
   useEffect(() => {
     async function onMessage(event: MessageEvent) {
-      if (event.source !== iframeRef.current?.contentWindow) return;
-      if (isPreviewClickMessage(event.data)) {
+      const fromPreview = event.source === iframeRef.current?.contentWindow;
+      const previewClick = isPreviewClickMessage(event.data);
+      const previewBlame = isPreviewBlameMessage(event.data);
+      if (!fromPreview && !previewClick && !previewBlame) return;
+      if (previewClick) {
         const { selector: clickedSelector } = event.data;
         // Store the selector so /api/comment can attach the comment to the right
         // element, but DO NOT pre-fill the textarea. The user's typed text is the
@@ -122,12 +133,14 @@ function PreviewScreen() {
         requestAnimationFrame(() => textareaRef.current?.focus());
         return;
       }
-      if (isPreviewBlameMessage(event.data)) {
+      if (previewBlame) {
         const { text: clickedText, selector: clickedSelector } = event.data;
         setBlameLabel(clickedText || clickedSelector);
         setBlameText("");
         setBlameProvider("");
         setBlamePrNumber(undefined);
+        setBlameXtraceMode("");
+        setBlameProvenance([]);
         setBlameOpen(true);
         setBlameLoading(true);
         try {
@@ -138,6 +151,8 @@ function PreviewScreen() {
           setBlameText(res.explanation);
           setBlameProvider(res.provider);
           setBlamePrNumber(res.prNumber);
+          setBlameXtraceMode(res.xtraceMode ?? "");
+          setBlameProvenance(res.provenance ?? []);
         } catch (err) {
           setBlameText(`Couldn't load explanation: ${(err as Error).message}`);
         } finally {
@@ -409,6 +424,11 @@ function PreviewScreen() {
                   PR #{blamePrNumber}
                 </span>
               )}
+              {blameXtraceMode && !blameLoading && (
+                <span className="rounded-full bg-mint/15 px-2.5 py-1 text-[10px] font-semibold uppercase text-mint">
+                  XTrace {blameXtraceMode}
+                </span>
+              )}
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
                 {blameProvider && !blameLoading ? `via ${blameProvider}` : ""}
               </span>
@@ -420,6 +440,26 @@ function PreviewScreen() {
               Close
             </button>
           </div>
+          {blameProvenance.length > 0 && !blameLoading && (
+            <div className="mt-4 rounded-2xl border border-border bg-background p-4">
+              <div className="text-[11px] font-semibold uppercase text-muted-foreground">
+                Provenance
+              </div>
+              <div className="mt-3 space-y-2">
+                {blameProvenance.slice(0, 6).map((item, index) => (
+                  <div key={`${item.kind}-${index}`} className="flex items-start gap-3 text-xs">
+                    <span className="mt-0.5 rounded-full border border-border px-2 py-0.5 uppercase text-muted-foreground">
+                      {item.kind}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="font-medium text-foreground">{item.label}</div>
+                      <div className="mt-0.5 text-muted-foreground">{item.detail}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </BlameModal>
       )}
     </div>

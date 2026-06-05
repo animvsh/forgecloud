@@ -317,7 +317,13 @@ export function useClearPreviewComments() {
 export function useBlame() {
   return useMutation({
     mutationFn: (vars: { selector?: string; label: string }) =>
-      apiPost<{ explanation: string; provider: string; prNumber?: number }>("/api/blame", vars),
+      apiPost<{
+        explanation: string;
+        provider: string;
+        prNumber?: number;
+        xtraceMode?: "local" | "webhook" | "hybrid";
+        provenance?: Array<{ label: string; detail: string; kind: string }>;
+      }>("/api/blame", vars),
   });
 }
 

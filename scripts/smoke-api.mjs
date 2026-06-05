@@ -121,12 +121,43 @@ try {
     "/api/health should report missing production deploy config",
   );
   assert(
+    health.json.checks?.some((check) => check.name === "auth_session_secret" && !check.passed),
+    "/api/health should report missing production session secret",
+  );
+  assert(
+    health.json.checks?.some((check) => check.name === "auth_login_delivery" && !check.passed),
+    "/api/health should report missing production login delivery",
+  );
+  assert(
+    health.json.checks?.some((check) => check.name === "auth_dev_fallback" && check.passed),
+    "/api/health should verify production dev-auth fallback is disabled",
+  );
+  assert(
     health.json.deployment?.mode === "production",
     "/api/health should expose production deployment mode in smoke",
   );
   assert(
     health.json.deployment?.canDeployProduction === false,
     "/api/health should not report production deploy readiness without provider env",
+  );
+  assert(
+    health.json.stack?.readyCount === 4 && health.json.stack?.totalCount === 4,
+    "/api/health should expose all four hackathon stack services as ready in local mode",
+  );
+  assert(
+    health.json.butterbase?.mode === "local",
+    "/api/health should expose Butterbase local source-of-truth mode",
+  );
+  assert(
+    health.json.composio?.mode === "demo",
+    "/api/health should expose Composio demo mode without API key",
+  );
+  assert(health.json.rocketRide?.ready === true, "/api/health should expose Rocket Ride readiness");
+  assert(
+    health.json.checks?.some(
+      (check) => check.name === "butterbase_source_of_truth" && check.passed,
+    ),
+    "/api/health should verify the Butterbase source-of-truth layer",
   );
 
   const state = await call("GET", "/api/state");
@@ -143,6 +174,13 @@ try {
     state.json.entitlements?.limits?.productionDeploys === true,
     "/api/state should expose production deploy entitlement",
   );
+  assert(state.json.stack?.allReady === true, "/api/state should expose ready stack status");
+  assert(
+    state.json.butterbase?.sourceOfTruth?.includes("Butterbase-compatible"),
+    "/api/state should expose Butterbase source-of-truth detail",
+  );
+  assert(state.json.composio?.source === "composio", "/api/state should expose Composio status");
+  assert(state.json.rocketRide?.ready === true, "/api/state should expose Rocket Ride status");
 
   const seeded = await call("POST", "/api/seed-demo", {});
   assert(seeded.status === 200, `/api/seed-demo expected 200, got ${seeded.status}`);
@@ -155,6 +193,46 @@ try {
   );
   assert(Array.isArray(seededState.json.tasks), "/api/state after seed missing tasks array");
   assert(seededState.json.tasks.length >= 12, "/api/state after seed should include demo tasks");
+  assert(
+    seededState.json.activityEvents?.some((event) => event.tool === "Composio"),
+    "/api/state after seed should include Composio activity evidence",
+  );
+  assert(
+    seededState.json.memoryEntries?.some((memory) => memory.source === "XTrace"),
+    "/api/state after seed should include XTrace memory evidence",
+  );
+
+  const connectSlack = await call("POST", "/api/connect", {
+    provider: "slack",
+    account: "Pleasure Pizza HQ",
+  });
+  assert(connectSlack.status === 200, `/api/connect expected 200, got ${connectSlack.status}`);
+  assert(
+    connectSlack.json.connection?.source === "composio",
+    "/api/connect should mark connections as Composio-managed",
+  );
+  assert(
+    connectSlack.json.connection?.sync_detail?.includes("Composio"),
+    "/api/connect should return Composio sync detail",
+  );
+  const scan = await call("POST", "/api/scan", {});
+  assert(scan.status === 200, `/api/scan expected 200, got ${scan.status}`);
+  assert(
+    scan.json.discoveries?.some((discovery) => discovery.source === "composio"),
+    "/api/scan should return Composio-sourced discoveries",
+  );
+  const suggested = await call("GET", "/api/suggested-apps");
+  assert(suggested.status === 200, `/api/suggested-apps expected 200, got ${suggested.status}`);
+  assert(
+    suggested.json.suggestedApps?.some((app) => {
+      try {
+        return JSON.parse(app.evidence ?? "[]").some((item) => String(item).includes("Composio"));
+      } catch {
+        return false;
+      }
+    }),
+    "/api/suggested-apps should include Composio evidence for suggestions",
+  );
 
   const prs = await call("GET", "/api/prs");
   assert(prs.status === 200, `/api/prs expected 200, got ${prs.status}`);
@@ -198,6 +276,16 @@ try {
           AND kind = 'agent_run'`,
     )
     .get();
+  const rocketRideRun = smokeDb
+    .prepare(
+      `SELECT *
+         FROM rocketride_workflow_runs
+        WHERE project_id = 'proj-pleasure-pizza'
+          AND workflow_type = 'run_task'
+        ORDER BY started_at DESC
+        LIMIT 1`,
+    )
+    .get();
   smokeDb.prepare("UPDATE workspaces SET plan = 'free' WHERE id = 'ws-default'").run();
   smokeDb.close();
   assert(runtimeChecks.length >= 3, "/api/run-task should persist runtime check rows");
@@ -227,6 +315,11 @@ try {
   assert(
     agentRunUsage.count >= 1,
     `/api/run-task should record agent_run usage, got ${agentRunUsage.count}`,
+  );
+  assert(rocketRideRun, "/api/run-task should record a Rocket Ride workflow run");
+  assert(
+    rocketRideRun.status === "completed" && rocketRideRun.pr_id,
+    `/api/run-task Rocket Ride workflow should complete and link PR, got ${JSON.stringify(rocketRideRun)}`,
   );
 
   const freePlanProject = await call("POST", "/api/projects", {
@@ -269,6 +362,18 @@ try {
   assert(guardrail.status === 200, `/api/chat guardrail expected 200, got ${guardrail.status}`);
   assert(guardrail.json.blocked === true, "/api/chat did not block DROP TABLE");
   assert(guardrail.json.rule?.kind === "drop_table", "/api/chat returned wrong guardrail rule");
+
+  const blame = await call("POST", "/api/blame", {
+    label: "Promo Builder",
+    selector: "#promo-builder",
+  });
+  assert(blame.status === 200, `/api/blame expected 200, got ${blame.status}`);
+  assert(blame.json.prNumber, "/api/blame should identify the matching PR");
+  assert(blame.json.xtraceMode === "local", "/api/blame should expose local XTrace mode");
+  assert(
+    blame.json.provenance?.some((item) => item.kind === "memory"),
+    "/api/blame should include XTrace memory provenance",
+  );
 
   const deployChat = await call("POST", "/api/chat", { message: "Deploy this version" });
   assert(
@@ -333,6 +438,10 @@ try {
         tasks: seededState.json.tasks.length,
         prs: prs.json.length,
         branches: branches.json.length,
+        stack: state.json.stack?.readyCount,
+        composioDiscoveries: scan.json.discoveries.length,
+        xtraceMode: blame.json.xtraceMode,
+        rocketRideWorkflow: rocketRideRun.status,
         externalDevFallback: externalDevFallback.status,
         runtimeChecks: runtimeChecks.length,
         audit: runTaskAudit.outcome,

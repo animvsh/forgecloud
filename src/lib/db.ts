@@ -220,6 +220,24 @@ function initSchema(db: Database.Database) {
       FOREIGN KEY (agent_run_id) REFERENCES agent_runs(id)
     );
 
+    CREATE TABLE IF NOT EXISTS rocketride_workflow_runs (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      workflow_type TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'running',
+      mode TEXT NOT NULL DEFAULT 'local',
+      external_run_id TEXT,
+      task_id TEXT,
+      pr_id TEXT,
+      deployment_id TEXT,
+      input_json TEXT,
+      output_json TEXT,
+      error TEXT,
+      started_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+      completed_at INTEGER,
+      FOREIGN KEY (project_id) REFERENCES projects(id)
+    );
+
     CREATE TABLE IF NOT EXISTS audit_events (
       id TEXT PRIMARY KEY,
       request_id TEXT NOT NULL,
@@ -254,6 +272,35 @@ function initSchema(db: Database.Database) {
       failure_message TEXT NOT NULL,
       recovery_action TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'recovered',
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+      FOREIGN KEY (project_id) REFERENCES projects(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS activity_events (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      actor_type TEXT NOT NULL,
+      actor_id TEXT,
+      event_type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      linked_task_id TEXT,
+      linked_pr_id TEXT,
+      linked_deployment_id TEXT,
+      tool TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+      FOREIGN KEY (project_id) REFERENCES projects(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS memory_entries (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      source TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      linked_task_id TEXT,
+      linked_pr_id TEXT,
+      confidence TEXT NOT NULL DEFAULT 'stored',
       created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
       FOREIGN KEY (project_id) REFERENCES projects(id)
     );
@@ -367,7 +414,15 @@ function initSchema(db: Database.Database) {
       status TEXT NOT NULL DEFAULT 'available',
       account_label TEXT,
       icon TEXT,
+      source TEXT NOT NULL DEFAULT 'composio',
+      toolkit_slug TEXT,
+      auth_config_id TEXT,
+      external_account_id TEXT,
+      connect_url TEXT,
+      sync_status TEXT,
+      sync_detail TEXT,
       connected_at INTEGER,
+      last_synced_at INTEGER,
       created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
       FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
     );
@@ -381,6 +436,8 @@ function initSchema(db: Database.Database) {
       label TEXT NOT NULL,
       detail TEXT,
       count INTEGER NOT NULL DEFAULT 0,
+      source TEXT NOT NULL DEFAULT 'composio',
+      external_id TEXT,
       created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
       FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
     );
@@ -395,6 +452,8 @@ function initSchema(db: Database.Database) {
       icon TEXT,
       uses_connections TEXT NOT NULL DEFAULT '[]',
       sample_features TEXT NOT NULL DEFAULT '[]',
+      source TEXT NOT NULL DEFAULT 'composio',
+      evidence TEXT NOT NULL DEFAULT '[]',
       created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
       FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
     );
@@ -406,12 +465,15 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project_id);
     CREATE INDEX IF NOT EXISTS idx_prs_project ON pull_requests(project_id);
     CREATE INDEX IF NOT EXISTS idx_recovery_project ON recovery_events(project_id);
+    CREATE INDEX IF NOT EXISTS idx_activity_project ON activity_events(project_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_memory_project ON memory_entries(project_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_chat_project ON chat_messages(project_id);
     CREATE INDEX IF NOT EXISTS idx_notifications_ws ON notifications(workspace_id, read_at);
     CREATE INDEX IF NOT EXISTS idx_branches_project ON branches(project_id, status);
     CREATE INDEX IF NOT EXISTS idx_commits_branch ON commits(branch_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_worktrees_project ON worktrees(project_id, status);
     CREATE INDEX IF NOT EXISTS idx_runtime_checks_run ON runtime_checks(agent_run_id, started_at);
+    CREATE INDEX IF NOT EXISTS idx_rocketride_project ON rocketride_workflow_runs(project_id, started_at);
     CREATE INDEX IF NOT EXISTS idx_audit_events_workspace ON audit_events(workspace_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_usage_events_workspace ON workspace_usage_events(workspace_id, kind, created_at);
   `);
@@ -430,6 +492,18 @@ function initSchema(db: Database.Database) {
   addColumn("pull_requests", "rolled_back_by", "TEXT");
   addColumn("pull_requests", "screenshot_url", "TEXT");
   addColumn("workspaces", "billing_status", "TEXT NOT NULL DEFAULT 'active'");
+  addColumn("connections", "source", "TEXT NOT NULL DEFAULT 'composio'");
+  addColumn("connections", "toolkit_slug", "TEXT");
+  addColumn("connections", "auth_config_id", "TEXT");
+  addColumn("connections", "external_account_id", "TEXT");
+  addColumn("connections", "connect_url", "TEXT");
+  addColumn("connections", "sync_status", "TEXT");
+  addColumn("connections", "sync_detail", "TEXT");
+  addColumn("connections", "last_synced_at", "INTEGER");
+  addColumn("discoveries", "source", "TEXT NOT NULL DEFAULT 'composio'");
+  addColumn("discoveries", "external_id", "TEXT");
+  addColumn("suggested_apps", "source", "TEXT NOT NULL DEFAULT 'composio'");
+  addColumn("suggested_apps", "evidence", "TEXT NOT NULL DEFAULT '[]'");
   db.exec(`
     UPDATE pull_requests
        SET merged_at = COALESCE(merged_at, approved_at)
@@ -601,6 +675,23 @@ export type RuntimeCheck = {
   completed_at: number | null;
 };
 
+export type RocketRideWorkflowRun = {
+  id: string;
+  project_id: string;
+  workflow_type: string;
+  status: string;
+  mode: string;
+  external_run_id: string | null;
+  task_id: string | null;
+  pr_id: string | null;
+  deployment_id: string | null;
+  input_json: string | null;
+  output_json: string | null;
+  error: string | null;
+  started_at: number;
+  completed_at: number | null;
+};
+
 export type AuditEvent = {
   id: string;
   request_id: string;
@@ -738,7 +829,15 @@ export type Connection = {
   status: string; // 'available' | 'connected' | 'error'
   account_label: string | null;
   icon: string | null;
+  source: string;
+  toolkit_slug: string | null;
+  auth_config_id: string | null;
+  external_account_id: string | null;
+  connect_url: string | null;
+  sync_status: string | null;
+  sync_detail: string | null;
   connected_at: number | null;
+  last_synced_at: number | null;
   created_at: number;
 };
 
@@ -751,6 +850,8 @@ export type Discovery = {
   label: string;
   detail: string | null;
   count: number;
+  source: string;
+  external_id: string | null;
   created_at: number;
 };
 
@@ -764,5 +865,7 @@ export type SuggestedApp = {
   icon: string | null;
   uses_connections: string; // JSON array of provider strings
   sample_features: string; // JSON array of strings
+  source: string;
+  evidence: string; // JSON array of strings
   created_at: number;
 };

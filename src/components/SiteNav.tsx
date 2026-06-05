@@ -1,5 +1,6 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import {
+  Activity,
   MessageSquare,
   ListChecks,
   Eye,
@@ -89,6 +90,7 @@ const sections: { key: "build" | "review" | "track"; tone: string; items: NavIte
       { to: "/app/changes", label: "PRs", icon: GitPullRequest },
       { to: "/app/branches", label: "Branches", icon: GitBranch, key: "branches" },
       { to: "/app/failures", label: "Recovery", icon: ShieldAlert },
+      { to: "/app/activity", label: "Activity", icon: Activity },
     ],
   },
   {

@@ -1,7 +1,16 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { ArrowRight, Check, Loader2, Plug2, Search, X } from "lucide-react";
+import {
+  ArrowRight,
+  Check,
+  ExternalLink,
+  Loader2,
+  Plug2,
+  Search,
+  ShieldCheck,
+  X,
+} from "lucide-react";
 import { useForgeState, useConnectTool, useDisconnectTool, useScan } from "@/lib/client";
 import { ScreenHeader } from "@/components/ScreenHeader";
 
@@ -14,9 +23,13 @@ type Connection = {
   id: string;
   provider: string;
   label: string;
-  status: "available" | "connected" | "error";
+  status: "available" | "connected" | "pending" | "error";
   account_label?: string | null;
   icon: string;
+  source?: string | null;
+  toolkit_slug?: string | null;
+  connect_url?: string | null;
+  sync_detail?: string | null;
 };
 
 const ACCENTS = [
@@ -56,16 +69,20 @@ function ConnectScreen() {
 
   const connections: Connection[] = data.connections ?? [];
   const connectedCount = connections.filter((c) => c.status === "connected").length;
+  const composio = data.composio;
 
   async function handleConnect(provider: string, label: string) {
     const account = (accountInput[provider] ?? "").trim();
-    if (!account) {
-      toast.error("Add an account/workspace name first.");
-      return;
-    }
     try {
-      await connectMutation.mutateAsync({ provider, account });
-      toast.success(`${label} connected`, { description: account });
+      const result = await connectMutation.mutateAsync({ provider, account });
+      const url = result.connection?.connect_url;
+      toast.success(
+        result.connection?.status === "pending"
+          ? `${label} authorization started`
+          : `${label} connected through Composio`,
+        { description: result.connection?.sync_detail ?? account },
+      );
+      if (url) window.open(url, "_blank", "noopener,noreferrer");
       setOpenProvider(null);
       setAccountInput((m) => ({ ...m, [provider]: "" }));
     } catch (err) {
@@ -96,19 +113,36 @@ function ConnectScreen() {
     <div className="space-y-6 pb-28 animate-in fade-in slide-in-from-bottom-2 duration-500">
       <ScreenHeader
         title="Connect your tools"
-        subtitle="ForgeCloud uses your real business data to suggest apps and build dashboards. Pick what to give it access to."
+        subtitle="Composio manages the connected accounts ForgeCloud scans for app ideas, tasks, and dashboards."
         action={
           <div className="hidden sm:flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
-            <Plug2 className="size-3.5" />
-            {connectedCount} of {connections.length} connected
+            <ShieldCheck className="size-3.5" />
+            Composio {composio?.mode ?? "demo"} · {connectedCount}/{connections.length}
           </div>
         }
       />
+
+      <div className="rounded-2xl border border-border bg-card p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold">Composio integration layer</div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {composio?.detail ??
+                "ForgeCloud is using Composio as the source of truth for connected accounts."}
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-mint/15 px-2.5 py-1 text-[11px] font-semibold uppercase text-mint">
+            <ShieldCheck className="size-3" />
+            {composio?.ready === false ? "Needs config" : "Managed"}
+          </span>
+        </div>
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {connections.map((conn) => {
           const isOpen = openProvider === conn.provider;
           const isConnected = conn.status === "connected";
+          const isPending = conn.status === "pending";
           const accent = accentFor(conn.provider);
           return (
             <div
@@ -132,6 +166,11 @@ function ConnectScreen() {
                         <Check className="size-3" /> Connected
                       </span>
                     )}
+                    {isPending && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber">
+                        OAuth pending
+                      </span>
+                    )}
                   </div>
                   {isConnected && conn.account_label ? (
                     <p className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -139,21 +178,38 @@ function ConnectScreen() {
                     </p>
                   ) : (
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      Read-only access to your {conn.label} workspace.
+                      Composio toolkit: {conn.toolkit_slug ?? conn.provider}
+                    </p>
+                  )}
+                  {conn.sync_detail && (
+                    <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
+                      {conn.sync_detail}
                     </p>
                   )}
                 </div>
               </div>
 
               <div className="mt-4">
-                {isConnected ? (
-                  <button
-                    onClick={() => handleDisconnect(conn.provider, conn.label)}
-                    disabled={disconnectMutation.isPending}
-                    className="text-xs text-muted-foreground hover:text-coral transition-colors disabled:opacity-50"
-                  >
-                    Disconnect
-                  </button>
+                {isConnected || isPending ? (
+                  <div className="flex flex-wrap items-center gap-3">
+                    {isPending && conn.connect_url && (
+                      <a
+                        href={conn.connect_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-full bg-amber px-3 py-1.5 text-xs font-medium text-foreground"
+                      >
+                        <ExternalLink className="size-3" /> Finish auth
+                      </a>
+                    )}
+                    <button
+                      onClick={() => handleDisconnect(conn.provider, conn.label)}
+                      disabled={disconnectMutation.isPending}
+                      className="text-xs text-muted-foreground hover:text-coral transition-colors disabled:opacity-50"
+                    >
+                      Disconnect
+                    </button>
+                  </div>
                 ) : isOpen ? (
                   <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
                     <input
@@ -162,7 +218,7 @@ function ConnectScreen() {
                       onChange={(e) =>
                         setAccountInput((m) => ({ ...m, [conn.provider]: e.target.value }))
                       }
-                      placeholder="Account/workspace name (e.g. sal@pleasurepizza.com)"
+                      placeholder="Optional account label (e.g. sal@pleasurepizza.com)"
                       className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-brand"
                       onKeyDown={(e) => {
                         if (e.key === "Enter") handleConnect(conn.provider, conn.label);

@@ -10,13 +10,18 @@ const baseUrl = `http://127.0.0.1:${port}`;
 const appRoutes = [
   ["/app", "Pleasure Pizza Ops"],
   ["/app/connect", "Connect your tools"],
+  ["/app/discoveries", "What I found"],
+  ["/app/suggested-apps", "Apps I can build for you"],
   ["/app/preview", "Live preview"],
   ["/app/changes", "Changes"],
   ["/app/branches", "Branches & commits"],
   ["/app/failures", "Failure recovery"],
   ["/app/tasks", "Tasks"],
+  ["/app/agents", "Agent team"],
   ["/app/team", "Team"],
   ["/app/deployments", "Deployments"],
+  ["/app/activity", "Activity"],
+  ["/app/report", "Final report"],
   ["/app/settings", "Settings"],
 ];
 const serverEnv = {
@@ -129,6 +134,52 @@ try {
   for (const [path, heading] of appRoutes) {
     await smokeRoute(desktop.page, path, heading);
   }
+  await smokeRoute(desktop.page, "/app/connect", "Connect your tools");
+  await desktop.page.getByText("Composio integration layer").waitFor({ timeout: 10_000 });
+  await desktop.page
+    .getByText(/COMPOSIO/i)
+    .first()
+    .waitFor({ timeout: 10_000 });
+  await smokeRoute(desktop.page, "/app/suggested-apps", "Apps I can build for you");
+  await desktop.page
+    .getByText(/Uses through Composio/i)
+    .first()
+    .waitFor({ timeout: 10_000 });
+  await desktop.page
+    .getByText(/Why ForgeCloud suggested this/i)
+    .first()
+    .waitFor({ timeout: 10_000 });
+  await smokeRoute(desktop.page, "/app/agents", "Agent team");
+  await desktop.page
+    .getByText(/Rocket Ride/i)
+    .first()
+    .waitFor({ timeout: 10_000 });
+  await smokeRoute(desktop.page, "/app/activity", "Activity");
+  await desktop.page
+    .getByText(/XTrace/i)
+    .first()
+    .waitFor({ timeout: 10_000 });
+  await desktop.page
+    .getByText(/Memory log/i)
+    .first()
+    .waitFor({ timeout: 10_000 });
+  await smokeRoute(desktop.page, "/app/preview", "Live preview");
+  await desktop.page.evaluate(async () => {
+    const res = await fetch("/api/blame", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ selector: "#vip-card", label: "VIP customer card" }),
+    });
+    const json = await res.json();
+    window.__forgecloudBlameSmoke = { status: res.status, json };
+  });
+  const blameSmoke = await desktop.page.evaluate(() => window.__forgecloudBlameSmoke);
+  assert(blameSmoke?.status === 200, `Preview blame expected 200, got ${blameSmoke?.status}`);
+  assert(blameSmoke?.json?.xtraceMode === "local", "Preview blame should use XTrace local memory");
+  assert(
+    Array.isArray(blameSmoke?.json?.provenance) && blameSmoke.json.provenance.length >= 2,
+    "Preview blame should return provenance entries",
+  );
   await smokeRoute(desktop.page, "/app/chat", "Build Room");
   await desktop.page.getByText("Agent pulse").waitFor({ timeout: 10_000 });
   await desktop.page.getByText("Trust gates").waitFor({ timeout: 10_000 });

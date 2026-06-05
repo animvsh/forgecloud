@@ -14,6 +14,7 @@ type Discovery = {
   label: string;
   detail: string;
   count: number;
+  source?: string | null;
 };
 
 type Connection = {
@@ -56,6 +57,7 @@ function DiscoveriesScreen() {
 
   const discoveries: Discovery[] = data.discoveries ?? [];
   const connections: Connection[] = data.connections ?? [];
+  const composio = data.composio;
 
   const grouped = discoveries.reduce<Record<string, Discovery[]>>((acc, d) => {
     (acc[d.provider] ||= []).push(d);
@@ -76,7 +78,7 @@ function DiscoveriesScreen() {
       <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
         <ScreenHeader
           title="What I found"
-          subtitle="ForgeCloud scanned your tools and found these signals. Pick a suggested app to build next."
+          subtitle="Composio-managed connected accounts are scanned for business signals ForgeCloud can turn into apps."
         />
         <div className="rounded-3xl border-2 border-dashed border-border bg-card p-10 text-center card-hover">
           <div
@@ -104,11 +106,12 @@ function DiscoveriesScreen() {
     <div className="space-y-6 pb-28 animate-in fade-in slide-in-from-bottom-2 duration-500">
       <ScreenHeader
         title="What I found"
-        subtitle="ForgeCloud scanned your tools and found these signals. Pick a suggested app to build next."
+        subtitle="Composio-managed connected accounts are scanned for business signals ForgeCloud can turn into apps."
         action={
           <div className="hidden sm:flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
             <Search className="size-3.5" />
-            {discoveries.length} signal{discoveries.length === 1 ? "" : "s"} found
+            Composio {composio?.mode ?? "demo"} · {discoveries.length} signal
+            {discoveries.length === 1 ? "" : "s"}
           </div>
         }
       />
@@ -128,7 +131,7 @@ function DiscoveriesScreen() {
                 <div className="min-w-0 flex-1">
                   <h3 className="font-semibold truncate">{meta.label}</h3>
                   <p className="text-xs text-muted-foreground">
-                    {rows.length} signal{rows.length === 1 ? "" : "s"}
+                    {rows.length} Composio signal{rows.length === 1 ? "" : "s"}
                   </p>
                 </div>
               </div>
@@ -143,6 +146,9 @@ function DiscoveriesScreen() {
                         <span className="font-medium text-sm truncate">{row.label}</span>
                         <span className="shrink-0 rounded-full bg-foreground/5 px-2 py-0.5 text-[10px] font-semibold text-foreground/70">
                           {row.count}
+                        </span>
+                        <span className="shrink-0 rounded-full bg-mint/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-mint">
+                          {row.source ?? "composio"}
                         </span>
                       </div>
                       <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">

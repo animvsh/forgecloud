@@ -3,6 +3,7 @@ const apiUrl = normalizeUrl(
   process.env.LIVE_API_URL ?? "https://forgecloud-palembang-production.up.railway.app",
 );
 const loginEmail = process.env.LIVE_LOGIN_EMAIL ?? "sal@pleasurepizza.com";
+const requireLiveStack = process.env.LIVE_REQUIRE_STACK !== "false";
 const { chromium } = await import("playwright");
 
 function normalizeUrl(value) {
@@ -107,6 +108,7 @@ try {
     db: health.json?.db,
     provider: health.json?.provider,
     deployment: health.json?.deployment,
+    stack: health.json?.stack,
   };
 
   assert(health.response.ok, `/api/health expected 2xx, got ${health.response.status}`);
@@ -120,6 +122,30 @@ try {
     health.json?.deployment?.canDeployProduction === true,
     "live API cannot run production deploys; provider hook/public URL config is incomplete",
   );
+  const healthChecks = health.json?.checks ?? [];
+  for (const checkName of ["auth_session_secret", "auth_login_delivery", "auth_dev_fallback"]) {
+    assert(
+      healthChecks.some((check) => check.name === checkName && check.passed === true),
+      `live API failed auth readiness check: ${checkName}`,
+    );
+  }
+  if (requireLiveStack) {
+    assert(
+      health.json?.stack?.liveRequired === true,
+      "live API is not enforcing FORGECLOUD_REQUIRE_LIVE_STACK=true",
+    );
+    assert(
+      health.json?.stack?.allLiveConfigured === true,
+      "live API does not have all required stack services configured",
+    );
+    const missingLiveServices = (health.json?.stack?.services ?? [])
+      .filter((service) => !service.configured)
+      .map((service) => service.key);
+    assert(
+      missingLiveServices.length === 0,
+      `live API has unconfigured stack services: ${missingLiveServices.join(", ")}`,
+    );
+  }
 
   const login = await postJson(`${apiUrl}/api/auth/request-login`, {
     email: loginEmail,

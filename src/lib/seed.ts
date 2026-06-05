@@ -110,6 +110,25 @@ function seedConnectorsAndSuggestions() {
   );
   for (const [id, provider, label, status, account, icon, connected_at] of connectors) {
     insertConn.run(id, DEFAULT_WORKSPACE_ID, provider, label, status, account, icon, connected_at);
+    db.prepare(
+      `UPDATE connections
+          SET source = 'composio',
+              toolkit_slug = COALESCE(toolkit_slug, ?),
+              external_account_id = COALESCE(external_account_id, ?),
+              sync_status = COALESCE(sync_status, ?),
+              sync_detail = COALESCE(sync_detail, ?),
+              last_synced_at = COALESCE(last_synced_at, ?)
+        WHERE id = ?`,
+    ).run(
+      toolkitSlugFor(provider),
+      status === "connected" ? `demo-${DEFAULT_WORKSPACE_ID}-${toolkitSlugFor(provider)}` : null,
+      status === "connected" ? "connected" : "available",
+      status === "connected"
+        ? `${label} is managed by Composio demo mode.`
+        : `${label} is ready to connect through Composio.`,
+      connected_at,
+      id,
+    );
   }
 
   // Discoveries (what scanning the connected tools found).
@@ -174,6 +193,16 @@ function seedConnectorsAndSuggestions() {
   );
   for (const [id, conn, provider, label, detail, _kind, count] of discoveries) {
     insertDisc.run(id, DEFAULT_WORKSPACE_ID, DEMO_PROJECT_ID, conn, provider, label, detail, count);
+    db.prepare(
+      `UPDATE discoveries
+          SET source = 'composio',
+              external_id = COALESCE(external_id, ?),
+              detail = CASE
+                WHEN detail LIKE '%Composio%' THEN detail
+                ELSE detail || ', surfaced through Composio'
+              END
+        WHERE id = ?`,
+    ).run(`seed:${provider}:${id}`, id);
   }
 
   // Suggested apps (cards the user picks from after scanning).
@@ -240,6 +269,7 @@ function seedConnectorsAndSuggestions() {
     `INSERT OR IGNORE INTO suggested_apps (id, workspace_id, project_id, slug, title, description, icon, uses_connections, sample_features) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   for (const [id, slug, title, description, icon, uses, features] of apps) {
+    const evidence = evidenceForSuggestedApp(slug);
     insertApp.run(
       id,
       DEFAULT_WORKSPACE_ID,
@@ -251,7 +281,47 @@ function seedConnectorsAndSuggestions() {
       JSON.stringify(uses),
       JSON.stringify(features),
     );
+    db.prepare(
+      `UPDATE suggested_apps
+          SET source = CASE
+                WHEN source = 'composio-execution' THEN source
+                ELSE 'composio'
+              END,
+              evidence = CASE
+                WHEN source = 'composio-execution' THEN evidence
+                ELSE ?
+              END
+        WHERE id = ?`,
+    ).run(JSON.stringify(evidence), id);
   }
+}
+
+function toolkitSlugFor(provider: string) {
+  if (provider === "google_sheets") return "googlesheets";
+  if (provider === "google_calendar") return "googlecalendar";
+  return provider;
+}
+
+function evidenceForSuggestedApp(slug: string) {
+  const evidence: Record<string, string[]> = {
+    "pizza-ops-dashboard": [
+      "Composio Gmail surfaced catering and complaint signals",
+      "Composio Google Sheets surfaced sales and schedule rows",
+      "Composio Google Calendar surfaced upcoming events",
+    ],
+    "catering-tracker": [
+      "Composio Gmail surfaced catering inquiries",
+      "Composio Google Calendar surfaced confirmed events",
+    ],
+    "complaint-manager": ["Composio Gmail surfaced customer complaints"],
+    "staff-task-board": ["Composio Google Sheets surfaced staff schedule rows"],
+    "slow-day-promo": ["Composio Google Sheets surfaced slow-hour sales patterns"],
+    "simple-crm": [
+      "Composio Gmail can import inbound lead emails",
+      "Composio Google Sheets can import lead exports",
+    ],
+  };
+  return evidence[slug] ?? [];
 }
 
 export function scaffoldDemoProject() {
@@ -1002,6 +1072,241 @@ export function populateDemoData(agentIds: Record<string, string>): void {
   );
   for (const [id, type, msg, action, status, createdAt] of recoveries) {
     insertRecovery.run(id, DEMO_PROJECT_ID, type, msg, action, status, createdAt);
+  }
+
+  // Activity + memory records. These make the PRD's "everything that happened"
+  // and hackathon tool story first-class instead of implied by scattered tables.
+  const activityEvents: Array<
+    [
+      string,
+      string,
+      string | null,
+      string,
+      string,
+      string,
+      string | null,
+      string | null,
+      string | null,
+      string,
+      number,
+    ]
+  > = [
+    [
+      "act-1",
+      "user",
+      "user-animesh",
+      "chat_request",
+      "Pizza dashboard requested",
+      "Sal asked ForgeCloud to build a pizza shop operations dashboard from sales, customer, staff, and promo data.",
+      null,
+      null,
+      null,
+      "Composio",
+      now - 1000 * 60 * 60 * 24 * 2,
+    ],
+    [
+      "act-2",
+      "agent",
+      agentIds["product"],
+      "workflow_started",
+      "RocketRide pipeline started",
+      "Product Agent converted the prompt into requirements, feature areas, and a reviewable build plan.",
+      null,
+      null,
+      null,
+      "RocketRide",
+      now - 1000 * 60 * 60 * 24 * 2 + 1000 * 60 * 2,
+    ],
+    [
+      "act-3",
+      "system",
+      null,
+      "records_persisted",
+      "Butterbase stored workspace state",
+      "Tasks, agents, PR metadata, approvals, deployments, and recovery records were written as the source of truth.",
+      null,
+      null,
+      null,
+      "Butterbase",
+      now - 1000 * 60 * 60 * 24 * 2 + 1000 * 60 * 4,
+    ],
+    [
+      "act-4",
+      "agent",
+      agentIds["frontend"],
+      "pr_opened",
+      "PR #1 opened for Pizza Ops Dashboard v1",
+      "Frontend and Backend Agents shipped sales cards, slow-hours logic, staff tasks, promo builder, and owner login.",
+      "task-1",
+      "pr-1",
+      null,
+      "RocketRide",
+      now - 1000 * 60 * 60 * 24 * 2 + 1000 * 60 * 45,
+    ],
+    [
+      "act-5",
+      "system",
+      null,
+      "preview_deployed",
+      "Preview went live",
+      "DevOps Agent published the first dashboard preview and linked it back to PR #1.",
+      "task-1",
+      "pr-1",
+      "dep-1",
+      "RocketRide",
+      now - 1000 * 60 * 60 * 2,
+    ],
+    [
+      "act-6",
+      "user",
+      "user-animesh",
+      "preview_comment",
+      "Profit impact requested from preview",
+      "Sal clicked the Promo Builder and asked to see discount cost before approving promos.",
+      "task-5",
+      "pr-2",
+      null,
+      "XTrace",
+      now - 1000 * 60 * 60 * 6,
+    ],
+    [
+      "act-7",
+      "agent",
+      agentIds["backend"],
+      "pr_opened",
+      "PR #2 added profit impact estimates",
+      "Backend Agent connected promo calculations to sales history and Safety Agent added the 25% approval threshold.",
+      "task-5",
+      "pr-2",
+      null,
+      "RocketRide",
+      now - 1000 * 60 * 60 * 6 + 1000 * 60 * 12,
+    ],
+    [
+      "act-8",
+      "agent",
+      agentIds["safety"],
+      "guardrail_blocked",
+      "Unsafe discount blocked",
+      "Safety Agent blocked a generated 50% off campaign because it exceeded the safe-margin rule.",
+      "task-5",
+      "pr-2",
+      null,
+      "XTrace",
+      now - 1000 * 60 * 60 * 5,
+    ],
+    [
+      "act-9",
+      "agent",
+      agentIds["safety"],
+      "guardrail_blocked",
+      "Customer phone numbers masked",
+      "Safety Agent blocked all-staff access to full phone numbers and kept owner-only unmasking.",
+      "task-8",
+      "pr-4",
+      null,
+      "XTrace",
+      now - 1000 * 60 * 60 * 4,
+    ],
+    [
+      "act-10",
+      "system",
+      null,
+      "approval_requested",
+      "Composio approval sent",
+      "Owner approval was routed through the connected workspace tools for PR #4 because customer-data visibility is high risk.",
+      "task-8",
+      "pr-4",
+      null,
+      "Composio",
+      now - 1000 * 60 * 60,
+    ],
+  ];
+  const insertActivity = db.prepare(
+    `INSERT OR REPLACE INTO activity_events
+       (id, project_id, actor_type, actor_id, event_type, title, description, linked_task_id, linked_pr_id, linked_deployment_id, tool, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  for (const [
+    id,
+    actorType,
+    actorId,
+    eventType,
+    title,
+    description,
+    taskId,
+    prId,
+    depId,
+    tool,
+    ts,
+  ] of activityEvents) {
+    insertActivity.run(
+      id,
+      DEMO_PROJECT_ID,
+      actorType,
+      actorId,
+      eventType,
+      title,
+      description,
+      taskId,
+      prId,
+      depId,
+      tool,
+      ts,
+    );
+  }
+
+  const memories: Array<
+    [string, string, string, string, string | null, string | null, string, number]
+  > = [
+    [
+      "mem-1",
+      "XTrace",
+      "Owner wants discount approvals",
+      "Promos above 25% should pause for owner approval before they are sent or deployed.",
+      "task-5",
+      "pr-2",
+      "stored",
+      now - 1000 * 60 * 60 * 6,
+    ],
+    [
+      "mem-2",
+      "XTrace",
+      "Phone numbers should be masked for staff",
+      "Staff views should show masked customer phone numbers; full numbers are owner-only.",
+      "task-8",
+      "pr-4",
+      "stored",
+      now - 1000 * 60 * 60 * 4,
+    ],
+    [
+      "mem-3",
+      "Butterbase",
+      "Pizza shop data sources",
+      "Gmail has catering requests and complaints; Sheets has 90 days of sales rows and staff schedules; Calendar has upcoming events.",
+      null,
+      null,
+      "stored",
+      now - 1000 * 60 * 60 * 24 * 2 + 1000 * 60 * 3,
+    ],
+    [
+      "mem-4",
+      "XTrace",
+      "Plain-English Blame context",
+      "Profit impact was added after Sal asked who would see discount risk before approving slow-day campaigns.",
+      "task-5",
+      "pr-2",
+      "stored",
+      now - 1000 * 60 * 60 * 5,
+    ],
+  ];
+  const insertMemory = db.prepare(
+    `INSERT OR REPLACE INTO memory_entries
+       (id, project_id, source, title, body, linked_task_id, linked_pr_id, confidence, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  for (const [id, source, title, body, taskId, prId, confidence, ts] of memories) {
+    insertMemory.run(id, DEMO_PROJECT_ID, source, title, body, taskId, prId, confidence, ts);
   }
 
   // Approval (pending — phone masking is high risk).

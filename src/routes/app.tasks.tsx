@@ -1,6 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ScreenHeader } from "@/components/ScreenHeader";
-import { Loader2, Play, AlertTriangle, Sparkles, Plus, X } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Columns3,
+  Filter,
+  GitPullRequest,
+  LayoutList,
+  Loader2,
+  Play,
+  Plus,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { useForgeState, useRunTask, useRunAllTasks, useAddTask, useRunMyTasks } from "@/lib/client";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -18,6 +30,38 @@ const AGENT_OPTIONS = [
 ] as const;
 
 type RiskLevel = "low" | "med" | "high";
+type TaskView = "board" | "list";
+type FilterValue = "all" | string;
+type AgentRow = { id: string; name: string };
+type TaskRow = {
+  id: string;
+  title: string;
+  description?: string | null;
+  status: string;
+  priority?: string | null;
+  risk_level: string;
+  requester_name?: string | null;
+  assigned_agent_id?: string | null;
+  reviewer_name?: string | null;
+  linked_pr_id?: string | null;
+  preview_url?: string | null;
+  created_at?: number;
+};
+type PullRequestRow = {
+  id: string;
+  task_id?: string | null;
+  number: number;
+  title: string;
+  status: string;
+  preview_url?: string | null;
+};
+type ApprovalRow = { id: string; pr_id?: string | null; reason: string; risk_level: string };
+type DeploymentRow = {
+  pr_id?: string | null;
+  environment: string;
+  status: string;
+  created_at: number;
+};
 
 export const Route = createFileRoute("/app/tasks")({
   component: TasksScreen,
@@ -43,6 +87,12 @@ function TasksScreen() {
   const [newOwnerAgent, setNewOwnerAgent] = useState<string>("Frontend Agent");
   const [newRisk, setNewRisk] = useState<RiskLevel>("low");
   const [submitting, setSubmitting] = useState(false);
+  const [view, setView] = useState<TaskView>("board");
+  const [statusFilter, setStatusFilter] = useState<FilterValue>("all");
+  const [agentFilter, setAgentFilter] = useState<FilterValue>("all");
+  const [reviewerFilter, setReviewerFilter] = useState<FilterValue>("all");
+  const [riskFilter, setRiskFilter] = useState<FilterValue>("all");
+  const [linkFilter, setLinkFilter] = useState<FilterValue>("all");
 
   if (isLoading || !data) {
     return (
@@ -55,9 +105,33 @@ function TasksScreen() {
     );
   }
 
-  const tasks = data.tasks;
-  const agents = data.agents;
-  const prs = data.prs;
+  const tasks = data.tasks as TaskRow[];
+  const agents = data.agents as AgentRow[];
+  const prs = data.prs as PullRequestRow[];
+  const approvals = (data.approvals ?? []) as ApprovalRow[];
+  const deployments = (data.deployments ?? []) as DeploymentRow[];
+  const agentsById = new Map<string, AgentRow>(agents.map((agent) => [agent.id, agent]));
+  const prsById = new Map<string, PullRequestRow>(prs.map((pr) => [pr.id, pr]));
+  const prsByTaskId = new Map<string, PullRequestRow>(
+    prs.filter((pr) => Boolean(pr.task_id)).map((pr) => [pr.task_id as string, pr]),
+  );
+  const approvalsByPrId = new Map<string, ApprovalRow>(
+    approvals
+      .filter((approval: { pr_id?: string | null }) => Boolean(approval.pr_id))
+      .map((approval: { pr_id: string }) => [approval.pr_id, approval]),
+  );
+  const latestDeploymentByPrId = new Map<string, DeploymentRow>();
+  for (const deployment of deployments) {
+    if (!deployment.pr_id) continue;
+    const previous = latestDeploymentByPrId.get(deployment.pr_id) as
+      | ({ created_at?: number } & { environment: string; status: string })
+      | undefined;
+    if (!previous || deployment.created_at > (previous.created_at ?? 0)) {
+      latestDeploymentByPrId.set(deployment.pr_id, deployment);
+    }
+  }
+  const linkedPrForTask = (task: TaskRow) =>
+    task.linked_pr_id ? prsById.get(task.linked_pr_id) : prsByTaskId.get(task.id);
 
   async function runOne(taskId: string, failureType?: string) {
     setRunning(taskId);
@@ -127,6 +201,37 @@ function TasksScreen() {
   }
 
   const hasBacklog = tasks.some((t) => t.status === "backlog");
+  const reviewerOptions = Array.from(
+    new Set(tasks.map((task) => task.reviewer_name).filter(Boolean)),
+  ) as string[];
+  const filteredTasks = tasks.filter((task) => {
+    const agent = agentsById.get(task.assigned_agent_id) as { name?: string } | undefined;
+    const linkedPr = linkedPrForTask(task);
+    const pendingApproval = linkedPr ? approvalsByPrId.get(linkedPr.id) : null;
+    if (statusFilter !== "all" && task.status !== statusFilter) return false;
+    if (agentFilter !== "all" && agent?.name !== agentFilter) return false;
+    if (reviewerFilter !== "all" && task.reviewer_name !== reviewerFilter) return false;
+    if (riskFilter !== "all" && task.risk_level !== riskFilter) return false;
+    if (linkFilter === "with_pr" && !linkedPr) return false;
+    if (linkFilter === "approval_needed" && !pendingApproval) return false;
+    if (linkFilter === "with_preview" && !task.preview_url && !linkedPr?.preview_url) return false;
+    return true;
+  });
+  const activeFilterCount = [
+    statusFilter,
+    agentFilter,
+    reviewerFilter,
+    riskFilter,
+    linkFilter,
+  ].filter((value) => value !== "all").length;
+
+  function clearFilters() {
+    setStatusFilter("all");
+    setAgentFilter("all");
+    setReviewerFilter("all");
+    setRiskFilter("all");
+    setLinkFilter("all");
+  }
 
   return (
     <div>
@@ -301,6 +406,96 @@ function TasksScreen() {
         </div>
       )}
 
+      {tasks.length > 0 && (
+        <div className="mt-4 rounded-2xl border border-border bg-card p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <Filter className="size-4 text-brand" />
+              Work filters
+              {activeFilterCount > 0 && (
+                <span className="rounded-full bg-brand/10 px-2 py-0.5 text-[10px] uppercase text-brand">
+                  {activeFilterCount} active
+                </span>
+              )}
+            </div>
+            <div className="inline-flex overflow-hidden rounded-full border border-border bg-background">
+              <button
+                onClick={() => setView("board")}
+                className={
+                  "inline-flex items-center gap-1.5 px-3 py-1.5 text-xs transition " +
+                  (view === "board" ? "bg-foreground text-background" : "hover:bg-muted")
+                }
+              >
+                <Columns3 className="size-3" />
+                Board
+              </button>
+              <button
+                onClick={() => setView("list")}
+                className={
+                  "inline-flex items-center gap-1.5 px-3 py-1.5 text-xs transition " +
+                  (view === "list" ? "bg-foreground text-background" : "hover:bg-muted")
+                }
+              >
+                <LayoutList className="size-3" />
+                List
+              </button>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter}>
+              <option value="all">All statuses</option>
+              {COLUMNS.map((col) => (
+                <option key={col.key} value={col.key}>
+                  {col.label}
+                </option>
+              ))}
+            </FilterSelect>
+            <FilterSelect label="Agent" value={agentFilter} onChange={setAgentFilter}>
+              <option value="all">All agents</option>
+              {agents.map((agent) => (
+                <option key={agent.id} value={agent.name}>
+                  {agent.name}
+                </option>
+              ))}
+            </FilterSelect>
+            <FilterSelect label="Reviewer" value={reviewerFilter} onChange={setReviewerFilter}>
+              <option value="all">All reviewers</option>
+              {reviewerOptions.map((reviewer) => (
+                <option key={reviewer} value={reviewer}>
+                  {reviewer}
+                </option>
+              ))}
+            </FilterSelect>
+            <FilterSelect label="Risk" value={riskFilter} onChange={setRiskFilter}>
+              <option value="all">All risks</option>
+              <option value="low">Low</option>
+              <option value="med">Medium</option>
+              <option value="high">High</option>
+            </FilterSelect>
+            <FilterSelect label="Links" value={linkFilter} onChange={setLinkFilter}>
+              <option value="all">All tasks</option>
+              <option value="with_pr">PR linked</option>
+              <option value="with_preview">Preview linked</option>
+              <option value="approval_needed">Approval needed</option>
+            </FilterSelect>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span>
+              Showing {filteredTasks.length} of {tasks.length} task
+              {tasks.length === 1 ? "" : "s"}
+            </span>
+            {activeFilterCount > 0 && (
+              <button
+                onClick={clearFilters}
+                className="rounded-full border border-border px-3 py-1.5 hover:bg-muted"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="mt-6">
         {tasks.length === 0 ? (
           <div className="rounded-3xl border-2 border-dashed border-border bg-card p-10 text-center">
@@ -308,10 +503,102 @@ function TasksScreen() {
               No tasks yet. The Product Agent will create them when you start a project.
             </p>
           </div>
+        ) : filteredTasks.length === 0 ? (
+          <div className="rounded-3xl border-2 border-dashed border-border bg-card p-10 text-center">
+            <p className="text-muted-foreground">
+              No tasks match these filters. Clear filters to see the full board.
+            </p>
+          </div>
+        ) : view === "list" ? (
+          <div className="overflow-hidden rounded-2xl border border-border bg-card">
+            <div className="hidden border-b border-border bg-muted/40 px-4 py-3 text-[10px] uppercase tracking-wider text-muted-foreground lg:grid lg:grid-cols-12">
+              <div className="col-span-4">Task</div>
+              <div className="col-span-2">Status</div>
+              <div className="col-span-2">Agent</div>
+              <div className="col-span-2">Reviewer</div>
+              <div className="col-span-2 text-right">Linked work</div>
+            </div>
+            <div className="divide-y divide-border">
+              {filteredTasks.map((task) => {
+                const agent = task.assigned_agent_id
+                  ? agentsById.get(task.assigned_agent_id)
+                  : undefined;
+                const pr = linkedPrForTask(task);
+                const pendingApproval = pr ? approvalsByPrId.get(pr.id) : undefined;
+                const deployment = pr ? latestDeploymentByPrId.get(pr.id) : undefined;
+                return (
+                  <div
+                    key={task.id}
+                    className="grid gap-3 px-4 py-4 text-sm lg:grid-cols-12 lg:items-center"
+                  >
+                    <div className="lg:col-span-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="font-semibold">{task.title}</div>
+                        <RiskBadge level={task.risk_level} />
+                      </div>
+                      {task.description && (
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          {task.description}
+                        </p>
+                      )}
+                    </div>
+                    <div className="lg:col-span-2">
+                      <StatusPill status={task.status} />
+                    </div>
+                    <div className="text-muted-foreground lg:col-span-2">
+                      {agent?.name ?? "Unassigned"}
+                    </div>
+                    <div className="text-muted-foreground lg:col-span-2">
+                      {task.reviewer_name ?? "Unassigned"}
+                    </div>
+                    <div className="flex flex-wrap justify-start gap-2 lg:col-span-2 lg:justify-end">
+                      {pr ? (
+                        <Link
+                          to="/app/changes"
+                          className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-1 text-[11px] hover:bg-muted"
+                        >
+                          <GitPullRequest className="size-3" />
+                          PR #{pr.number}
+                        </Link>
+                      ) : (
+                        <span className="rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground">
+                          No PR
+                        </span>
+                      )}
+                      {pendingApproval && (
+                        <Link
+                          to="/app/changes"
+                          className="rounded-full border border-amber/40 bg-amber/10 px-2 py-1 text-[11px] text-amber hover:bg-amber/20"
+                        >
+                          Approval
+                        </Link>
+                      )}
+                      {deployment && (
+                        <Link
+                          to="/app/deployments"
+                          className="rounded-full border border-border px-2 py-1 text-[11px] hover:bg-muted"
+                        >
+                          {deployment.environment}: {deployment.status}
+                        </Link>
+                      )}
+                      {(task.preview_url || pr?.preview_url) && (
+                        <Link
+                          to="/app/preview"
+                          className="rounded-full border border-border px-2 py-1 text-[11px] hover:bg-muted"
+                        >
+                          Preview
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-4">
             {COLUMNS.map((col) => {
-              const colTasks = tasks.filter((t) => t.status === col.key);
+              const colTasks = filteredTasks.filter((t) => t.status === col.key);
               return (
                 <div key={col.key} className="rounded-2xl border border-border bg-card p-4">
                   <div
@@ -327,8 +614,12 @@ function TasksScreen() {
                   </div>
                   <div className="space-y-2">
                     {colTasks.map((t) => {
-                      const agent = agents.find((a) => a.id === t.assigned_agent_id);
-                      const pr = prs.find((p) => p.id === t.linked_pr_id);
+                      const agent = t.assigned_agent_id
+                        ? agentsById.get(t.assigned_agent_id)
+                        : undefined;
+                      const pr = linkedPrForTask(t);
+                      const pendingApproval = pr ? approvalsByPrId.get(pr.id) : undefined;
+                      const deployment = pr ? latestDeploymentByPrId.get(pr.id) : undefined;
                       return (
                         <div
                           key={t.id}
@@ -367,9 +658,32 @@ function TasksScreen() {
                               className="mt-2 inline-flex w-full items-center justify-between rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors"
                             >
                               <span>PR #{pr.number}</span>
-                              <span className="text-muted-foreground">view →</span>
+                              <span className="text-muted-foreground">view</span>
                             </Link>
                           )}
+                          <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+                            {pendingApproval && (
+                              <span className="rounded-full bg-amber/10 px-2 py-0.5 font-semibold text-amber">
+                                Approval needed
+                              </span>
+                            )}
+                            {(t.preview_url || pr?.preview_url) && (
+                              <Link
+                                to="/app/preview"
+                                className="rounded-full border border-border px-2 py-0.5 hover:bg-muted"
+                              >
+                                Preview
+                              </Link>
+                            )}
+                            {deployment && (
+                              <Link
+                                to="/app/deployments"
+                                className="rounded-full border border-border px-2 py-0.5 hover:bg-muted"
+                              >
+                                {deployment.environment}: {deployment.status}
+                              </Link>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
@@ -401,5 +715,55 @@ function RiskBadge({ level }: { level: string }) {
     >
       {level}
     </span>
+  );
+}
+
+function StatusPill({ status }: { status: string }) {
+  const labels: Record<string, string> = {
+    backlog: "Backlog",
+    building: "Building",
+    review: "Review",
+    done: "Done",
+  };
+  const colors: Record<string, string> = {
+    backlog: "bg-muted text-muted-foreground",
+    building: "bg-sky/20 text-sky",
+    review: "bg-amber/20 text-amber",
+    done: "bg-mint/20 text-mint",
+  };
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase ${colors[status] ?? "bg-muted text-muted-foreground"}`}
+    >
+      {status === "done" && <CheckCircle2 className="size-3" />}
+      {labels[status] ?? status}
+    </span>
+  );
+}
+
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  children,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-brand"
+      >
+        {children}
+      </select>
+    </label>
   );
 }

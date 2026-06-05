@@ -20,6 +20,8 @@ if (!address || typeof address === "string") throw new Error("Hook server did no
 
 process.env.INSFORGE_DB_PATH = join(tempDir, "fresh.sqlite");
 process.env.AI_PROVIDER = "fallback";
+process.env.AUTH_SESSION_SECRET = "smoke-production-session-secret-32-chars";
+process.env.AUTH_LOGIN_WEBHOOK_URL = `http://127.0.0.1:${address.port}/login`;
 process.env.FORGECLOUD_DEPLOY_MODE = "production";
 process.env.FORGECLOUD_DEPLOY_PROVIDER = "railway";
 process.env.RAILWAY_DEPLOY_HOOK_URL = `http://127.0.0.1:${address.port}/deploy`;

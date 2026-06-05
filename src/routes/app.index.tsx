@@ -692,7 +692,7 @@ function EmptyState({
           <input
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder='Describe what you want to build, e.g. "A waitlist page for our launch"'
+            placeholder='Describe what you want to build, e.g. "A POS system for my pizza shop"'
             className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
           <button
@@ -709,6 +709,13 @@ function EmptyState({
           </button>
         </form>
         <p className="mt-2 text-center text-xs text-muted-foreground">
+          <button
+            type="button"
+            onClick={() => setPrompt("Build a POS system for my pizza shop")}
+            className="mr-2 text-brand hover:underline"
+          >
+            Use the POS demo prompt
+          </button>
           Or open the{" "}
           <Link to="/app/intake" className="text-brand hover:underline">
             guided intake wizard

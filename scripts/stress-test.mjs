@@ -1,18 +1,28 @@
-// Comprehensive E2E stress test for ForgeCloud against the running dev server.
+// Comprehensive E2E stress test for ForgeCloud against a running server or,
+// by default, a self-started built server with a temporary database.
 // Walks the full core loop, exercises every screen, every failure type, every
 // deploy environment. Surfaces what is broken vs what is shipping.
 //
 // Usage: node scripts/stress-test.mjs [baseUrl]
-//        (defaults to http://localhost:8080)
+//        (defaults to a temporary local built server)
 
+import { spawn } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { chromium } from "playwright";
 
-const baseUrl = process.argv[2] ?? "http://localhost:8080";
+const suppliedBaseUrl = process.argv[2]?.replace(/\/+$/, "");
+const tempDir = suppliedBaseUrl ? null : await mkdtemp(join(tmpdir(), "forgecloud-stress-"));
+const port = 5200 + Math.floor(Math.random() * 1000);
+const baseUrl = suppliedBaseUrl ?? `http://127.0.0.1:${port}`;
 
 const results = [];
 const findings = [];
 let currentStep = "";
 let currentFile = "";
+let server = null;
+const serverLogs = [];
 
 function step(name) {
   currentStep = name;
@@ -56,7 +66,53 @@ async function api(method, path, body) {
   return { status: res.status, json };
 }
 
+async function waitForHealth() {
+  const deadline = Date.now() + 20_000;
+  let lastError = "";
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`${baseUrl}/api/health`);
+      if (res.ok) return;
+      lastError = `${res.status} ${await res.text().catch(() => "")}`;
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(
+    `Server did not become healthy: ${lastError}\n${serverLogs.join("").slice(-2_000)}`,
+  );
+}
+
+async function startServerIfNeeded() {
+  if (suppliedBaseUrl) return;
+  server = spawn(process.execPath, ["server-entry.mjs"], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      NODE_ENV: "development",
+      HOST: "127.0.0.1",
+      PORT: String(port),
+      INSFORGE_DB_PATH: join(tempDir, "stress.sqlite"),
+      AI_PROVIDER: "fallback",
+      AUTH_REQUIRED: "false",
+      ENABLE_DEMO_ENDPOINTS: "true",
+      FORGECLOUD_ENABLE_FAILURE_INJECTION: "true",
+      FORGECLOUD_DEPLOY_MODE: "simulation",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  server.stdout.on("data", (chunk) => serverLogs.push(String(chunk)));
+  server.stderr.on("data", (chunk) => serverLogs.push(String(chunk)));
+  server.on("exit", (code) => {
+    if (code !== null && code !== 0) serverLogs.push(`\n[server exited ${code}]\n`);
+  });
+  await waitForHealth();
+}
+
 async function main() {
+  await startServerIfNeeded();
+
   // 1. Health
   step("1. Health + readiness");
   const health = await api("GET", "/api/health");
@@ -176,8 +232,14 @@ async function main() {
 
   // 9. Approval queue + decide
   step("9. Approval queue");
-  const state3 = await api("GET", "/api/state");
-  const pending = state3.json?.approvals?.[0];
+  let state3 = await api("GET", "/api/state");
+  let pending = state3.json?.approvals?.[0];
+  if (!pending) {
+    const injected = await api("POST", "/api/inject-failure", { type: "unsafe_db_migration" });
+    assert(injected.status === 200, "unsafe migration creates a reviewable failure");
+    state3 = await api("GET", "/api/state");
+    pending = state3.json?.approvals?.[0];
+  }
   if (pending) {
     const decide = await api("POST", "/api/approval", {
       approvalId: pending.id,
@@ -185,7 +247,7 @@ async function main() {
     });
     assert(decide.status === 200, "approve pending approval -> 200");
   } else {
-    finding("Approvals", "low", "no pending approval in state");
+    fail("approval queue has a pending item after unsafe migration injection");
   }
 
   // 10. PR approve + rollback
@@ -313,7 +375,7 @@ async function main() {
   }
 
   // 19. Browser walk: render every screen
-  step("19. Browser walk — all 16 screens render without console errors");
+  step("19. Browser walk — all app screens render without console errors");
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();
@@ -338,6 +400,7 @@ async function main() {
     ["/app/agents", "Agents"],
     ["/app/deployments", "Deployments"],
     ["/app/team", "Team"],
+    ["/app/activity", "Activity"],
     ["/app/report", "Report"],
     ["/app/settings", "Settings"],
   ];
@@ -380,7 +443,21 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error("stress test crashed:", err);
-  process.exit(1);
-});
+main()
+  .catch((err) => {
+    console.error("stress test crashed:", err);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    if (server) {
+      server.kill("SIGTERM");
+      await new Promise((resolve) => {
+        const timeout = setTimeout(resolve, 2_000);
+        server.once("exit", () => {
+          clearTimeout(timeout);
+          resolve();
+        });
+      });
+    }
+    if (tempDir) await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  });

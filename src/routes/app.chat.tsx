@@ -15,6 +15,8 @@ import {
   Zap,
   Pencil,
   ExternalLink,
+  ChevronDown,
+  GitMerge,
 } from "lucide-react";
 import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 import { toast } from "sonner";
@@ -25,9 +27,9 @@ export const Route = createFileRoute("/app/chat")({
 });
 
 const DEMO_PROMPTS = [
+  "Build a POS system for my pizza shop",
   "Build a simple CRM for my sales team",
   "Build a waitlist app for my new product",
-  "Build an internal tool for tracking job applications",
 ];
 
 const FOLLOW_UP_PROMPTS = [
@@ -48,6 +50,7 @@ function ChatScreen() {
   const [editingPlanFor, setEditingPlanFor] = useState<string | null>(null);
   const [planEditNote, setPlanEditNote] = useState("");
   const [previewKey, setPreviewKey] = useState(0);
+  const [openStudioAgent, setOpenStudioAgent] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -57,9 +60,29 @@ function ChatScreen() {
   }, [data?.chatMessages?.length]);
 
   const hasProject = (data?.tasks?.length ?? 0) > 0;
+  const projectId = data?.project?.id;
   const tasks = data?.tasks ?? [];
   const prs = data?.prs ?? [];
-  const agents = data?.agents ?? [];
+  const rawAgents = (data?.agents ?? []).filter(
+    (agent: { project_id?: string | null }) => !projectId || agent.project_id === projectId,
+  );
+  const assignedTaskAgentIds = new Set(
+    tasks
+      .map((task: { assigned_agent_id?: string | null }) => task.assigned_agent_id)
+      .filter(Boolean),
+  );
+  const agents = Array.from(
+    rawAgents
+      .reduce((map, agent: { id: string; name: string; type?: string | null }) => {
+        const key = agent.type ?? agent.name;
+        const existing = map.get(key);
+        if (!existing || assignedTaskAgentIds.has(agent.id)) {
+          map.set(key, agent);
+        }
+        return map;
+      }, new Map<string, { id: string; name: string; type?: string | null; status: string; last_action?: string | null }>())
+      .values(),
+  );
   const approvals = data?.approvals ?? [];
   const deployments = data?.deployments ?? [];
   const recovery = data?.recovery ?? [];
@@ -73,6 +96,8 @@ function ChatScreen() {
   ).length;
   const activeAgents = agents.filter((agent: { status: string }) => agent.status !== "idle");
   const latestDeployment = deployments[0];
+  const branches = data?.branches ?? [];
+  const rocketRideRuns = data?.rocketRide?.runs ?? [];
   const suggestedPrompts = hasProject ? FOLLOW_UP_PROMPTS : DEMO_PROMPTS;
 
   async function handleSend(text: string) {
@@ -403,6 +428,35 @@ function ChatScreen() {
                     </div>
                   );
                 }
+                if (meta?.kind === "build_complete") {
+                  return (
+                    <Message key={m.id} from="ForgeCloud" accent>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-2 rounded-full bg-mint/15 px-3 py-1 text-xs font-semibold text-mint">
+                          <GitMerge className="size-3.5" />
+                          Safe PRs merged
+                        </span>
+                        <span className="inline-flex items-center gap-2 rounded-full bg-sky/15 px-3 py-1 text-xs font-semibold text-sky">
+                          <Rocket className="size-3.5" />
+                          Preview live
+                        </span>
+                      </div>
+                      <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                        {m.content}
+                      </p>
+                      {meta.previewUrl && (
+                        <a
+                          href={meta.previewUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-foreground px-4 py-2 text-xs font-medium text-background hover:opacity-90"
+                        >
+                          Open platform link <ExternalLink className="size-3.5" />
+                        </a>
+                      )}
+                    </Message>
+                  );
+                }
                 if (meta?.kind === "secret_block" || meta?.kind === "guardrail_block") {
                   return (
                     <Message key={m.id} from="Safety Agent">
@@ -466,6 +520,16 @@ function ChatScreen() {
 
         {data && (
           <aside className="space-y-3">
+            <BuildStudioPanel
+              agents={agents}
+              tasks={tasks}
+              prs={prs}
+              deployments={deployments}
+              branches={branches}
+              rocketRideRuns={rocketRideRuns}
+              openAgentId={openStudioAgent}
+              setOpenAgentId={setOpenStudioAgent}
+            />
             <ContextPanel
               activeAgents={activeAgents}
               agents={agents}
@@ -651,6 +715,218 @@ function Composer({
           {pending ? <Loader2 className="size-5 animate-spin" /> : <ArrowUp className="size-5" />}
         </button>
       </form>
+    </div>
+  );
+}
+
+function BuildStudioPanel({
+  agents,
+  tasks,
+  prs,
+  deployments,
+  branches,
+  rocketRideRuns,
+  openAgentId,
+  setOpenAgentId,
+}: {
+  agents: Array<{ id: string; name: string; status: string; last_action?: string | null }>;
+  tasks: Array<{
+    id: string;
+    title: string;
+    status: string;
+    assigned_agent_id?: string | null;
+    linked_pr_id?: string | null;
+  }>;
+  prs: Array<{
+    id: string;
+    number: number;
+    title: string;
+    status: string;
+    risk_level: string;
+    created_by_agent_id?: string | null;
+    task_id?: string | null;
+    preview_url?: string | null;
+  }>;
+  deployments: Array<{
+    environment: string;
+    status: string;
+    cloudflare_url?: string | null;
+    railway_url?: string | null;
+  }>;
+  branches: Array<{
+    id: string;
+    name: string;
+    status: string;
+    head_pr_id?: string | null;
+    pr_id?: string | null;
+  }>;
+  rocketRideRuns: Array<{
+    id: string;
+    workflow_type: string;
+    status: string;
+    task_id?: string | null;
+  }>;
+  openAgentId: string | null;
+  setOpenAgentId: (id: string | null) => void;
+}) {
+  const liveDeployment = deployments.find((deployment) => deployment.status === "live");
+  const liveUrl =
+    liveDeployment?.cloudflare_url ??
+    liveDeployment?.railway_url ??
+    prs.find((pr) => pr.preview_url)?.preview_url ??
+    null;
+  const mergedCount = prs.filter((pr) => pr.status === "merged").length;
+  const workingCount = agents.filter((agent) => agent.status !== "idle").length;
+  const completedRuns = rocketRideRuns.filter((run) => run.status === "completed").length;
+
+  return (
+    <div
+      data-testid="build-studio-panel"
+      className="rounded-2xl border border-border bg-card p-4 shadow-sm"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold">AI software studio</h2>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            Agents turn the request into tasks, commits, merged PRs, and a live preview.
+          </p>
+        </div>
+        <span className="rounded-full bg-violet/15 px-2 py-1 text-[10px] font-semibold uppercase text-violet">
+          Build Mode
+        </span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+        <StudioMetric label="agents" value={workingCount > 0 ? workingCount : agents.length} />
+        <StudioMetric label="merged" value={mergedCount} />
+        <StudioMetric label="runs" value={completedRuns} />
+      </div>
+
+      {liveUrl && (
+        <a
+          href={liveUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-mint/30 bg-mint/10 px-3 py-2 text-xs font-medium text-mint hover:bg-mint/15"
+        >
+          <span className="truncate">Platform link ready</span>
+          <ExternalLink className="size-3.5 shrink-0" />
+        </a>
+      )}
+
+      <div className="mt-3 space-y-2">
+        {agents.slice(0, 7).map((agent) => {
+          const agentTasks = tasks.filter((task) => task.assigned_agent_id === agent.id);
+          const agentPrs = prs.filter(
+            (pr) =>
+              pr.created_by_agent_id === agent.id ||
+              agentTasks.some((task) => task.id === pr.task_id || task.linked_pr_id === pr.id),
+          );
+          const agentBranches = branches.filter((branch) =>
+            agentPrs.some((pr) => pr.id === (branch.head_pr_id ?? branch.pr_id)),
+          );
+          const activeTask =
+            agentTasks.find((task) => task.status === "building") ??
+            agentTasks.find((task) => task.status === "review") ??
+            agentTasks[0];
+          const isOpen = openAgentId === agent.id;
+          const pulse =
+            agent.status !== "idle" || agentTasks.some((task) => task.status !== "done");
+
+          return (
+            <div key={agent.id} className="overflow-hidden rounded-xl border border-border">
+              <button
+                type="button"
+                data-testid={`build-studio-agent-${agent.id}`}
+                aria-label={`Toggle ${agent.name} build details`}
+                onClick={() => setOpenAgentId(isOpen ? null : agent.id)}
+                className="flex w-full items-center gap-3 bg-background px-3 py-2.5 text-left hover:bg-muted/60"
+              >
+                <span
+                  className={`size-2 rounded-full ${pulse ? "animate-pulse bg-mint" : "bg-muted-foreground/40"}`}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs font-semibold">{agent.name}</div>
+                  <div className="truncate text-[11px] text-muted-foreground">
+                    {activeTask?.title ?? agent.last_action ?? "Ready"}
+                  </div>
+                </div>
+                <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
+                  {agent.status}
+                </span>
+                <ChevronDown
+                  className={`size-3.5 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+              {isOpen && (
+                <div className="space-y-3 border-t border-border bg-card px-3 py-3 text-xs">
+                  <StudioRow
+                    label="Working on"
+                    value={activeTask?.title ?? "No active task yet"}
+                    tone="sky"
+                  />
+                  <StudioRow
+                    label="Commit"
+                    value={
+                      agentBranches[0]
+                        ? `${agentBranches[0].name} / ${agentBranches[0].status}`
+                        : agentPrs[0]
+                          ? `PR #${agentPrs[0].number}`
+                          : "Waiting for generated work"
+                    }
+                    tone="violet"
+                  />
+                  <StudioRow
+                    label="Review"
+                    value={
+                      agentPrs[0]
+                        ? `${agentPrs[0].status.replace(/_/g, " ")} / ${agentPrs[0].risk_level} risk`
+                        : "No PR yet"
+                    }
+                    tone={agentPrs[0]?.risk_level === "high" ? "amber" : "mint"}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function StudioMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-xl border border-border bg-background px-2 py-2">
+      <div className="text-sm font-semibold">{value}</div>
+      <div className="text-[10px] uppercase text-muted-foreground">{label}</div>
+    </div>
+  );
+}
+
+function StudioRow({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "sky" | "violet" | "mint" | "amber";
+}) {
+  const toneClass =
+    tone === "sky"
+      ? "text-sky"
+      : tone === "violet"
+        ? "text-violet"
+        : tone === "amber"
+          ? "text-amber"
+          : "text-mint";
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <span className="shrink-0 text-[10px] font-semibold uppercase text-muted-foreground">
+        {label}
+      </span>
+      <span className={`min-w-0 text-right font-medium ${toneClass}`}>{value}</span>
     </div>
   );
 }

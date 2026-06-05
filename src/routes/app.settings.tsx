@@ -17,6 +17,9 @@ import {
   Users,
   Bell,
   ShieldAlert,
+  Database,
+  Radio,
+  Rocket,
 } from "lucide-react";
 
 export const Route = createFileRoute("/app/settings")({
@@ -49,6 +52,7 @@ function SettingsScreen() {
   const providerName: string = data.providerName ?? "AI";
   const aiAvailable: boolean = !!data.aiAvailable;
   const agents = data.agents ?? [];
+  const stack = data.stack;
   const teamMembers = (data.teamMembers ?? []) as Array<{
     id: string;
     display_name: string;
@@ -243,6 +247,44 @@ function SettingsScreen() {
           )}
         </section>
 
+        {/* Stack */}
+        <section className="rounded-3xl border border-border bg-card p-6 card-hover">
+          <SectionHeader
+            icon={<Rocket className="size-4 text-violet" />}
+            title="Hackathon stack"
+            subtitle="RocketRide, Butterbase, XTrace, and Composio readiness for this workspace."
+            action={
+              stack ? (
+                <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
+                  {stack.readyCount}/{stack.totalCount} ready
+                </span>
+              ) : null
+            }
+          />
+          {stack?.services?.length ? (
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {stack.services.map(
+                (service: {
+                  key: string;
+                  label: string;
+                  role: string;
+                  mode: string;
+                  ready: boolean;
+                  configured: boolean;
+                  detail: string;
+                  missing?: string[];
+                }) => (
+                  <StackServiceCard key={service.key} service={service} />
+                ),
+              )}
+            </div>
+          ) : (
+            <div className="mt-4 rounded-2xl border border-dashed border-border bg-background p-5 text-sm text-muted-foreground">
+              Stack status is not available.
+            </div>
+          )}
+        </section>
+
         {/* Intelligence */}
         <section className="rounded-3xl border border-border bg-card p-6 card-hover">
           <SectionHeader
@@ -386,7 +428,7 @@ function SettingsScreen() {
           <SectionHeader
             icon={<Bell className="size-4 text-amber" />}
             title="Notifications"
-            subtitle="Pick which events ping you. Wiring coming soon."
+            subtitle="Pick which events ping you. Composio webhook delivery is used when configured."
           />
           <div className="mt-4 divide-y divide-border rounded-2xl border border-border bg-background">
             <NotificationRow
@@ -525,6 +567,76 @@ function UsageField({ label, value, detail }: { label: string; value: string; de
       <div className="text-xs font-medium uppercase text-muted-foreground">{label}</div>
       <div className="mt-2 text-lg font-semibold">{value}</div>
       <div className="mt-1 text-xs text-muted-foreground">{detail}</div>
+    </div>
+  );
+}
+
+function StackServiceCard({
+  service,
+}: {
+  service: {
+    key: string;
+    label: string;
+    role: string;
+    mode: string;
+    ready: boolean;
+    configured: boolean;
+    detail: string;
+    missing?: string[];
+  };
+}) {
+  const Icon =
+    service.key === "rocketride"
+      ? Rocket
+      : service.key === "butterbase"
+        ? Database
+        : service.key === "xtrace"
+          ? Brain
+          : Radio;
+  const tone =
+    service.key === "rocketride"
+      ? "text-violet bg-violet/10"
+      : service.key === "butterbase"
+        ? "text-sky bg-sky/10"
+        : service.key === "xtrace"
+          ? "text-mint bg-mint/10"
+          : "text-coral bg-coral/10";
+
+  return (
+    <div className="rounded-2xl border border-border bg-background p-4">
+      <div className="flex items-start gap-3">
+        <div className={`flex size-10 shrink-0 items-center justify-center squircle ${tone}`}>
+          <Icon className="size-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-semibold">{service.label}</h3>
+            <span
+              className={
+                "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase " +
+                (service.ready ? "bg-mint/20 text-mint" : "bg-amber/20 text-amber")
+              }
+            >
+              {service.ready ? "Ready" : "Needs config"}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">{service.role}</p>
+          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{service.detail}</p>
+          <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+            <span className="rounded-full border border-border bg-card px-2 py-0.5 uppercase text-muted-foreground">
+              {service.mode}
+            </span>
+            <span className="rounded-full border border-border bg-card px-2 py-0.5 uppercase text-muted-foreground">
+              {service.configured ? "configured" : "demo-safe"}
+            </span>
+          </div>
+          {service.missing && service.missing.length > 0 && (
+            <div className="mt-3 rounded-xl border border-amber/30 bg-amber/10 px-3 py-2 text-xs text-amber">
+              Missing: {service.missing.join(", ")}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

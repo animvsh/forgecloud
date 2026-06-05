@@ -30,6 +30,7 @@ import { Route as AppChatRouteImport } from './routes/app.chat'
 import { Route as AppChangesRouteImport } from './routes/app.changes'
 import { Route as AppBranchesRouteImport } from './routes/app.branches'
 import { Route as AppAgentsRouteImport } from './routes/app.agents'
+import { Route as AppActivityRouteImport } from './routes/app.activity'
 import { Route as AppAgentsAgentIdRouteImport } from './routes/app.agents.$agentId'
 
 const LoginRoute = LoginRouteImport.update({
@@ -137,6 +138,11 @@ const AppAgentsRoute = AppAgentsRouteImport.update({
   path: '/agents',
   getParentRoute: () => AppRoute,
 } as any)
+const AppActivityRoute = AppActivityRouteImport.update({
+  id: '/activity',
+  path: '/activity',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppAgentsAgentIdRoute = AppAgentsAgentIdRouteImport.update({
   id: '/$agentId',
   path: '/$agentId',
@@ -148,6 +154,7 @@ export interface FileRoutesByFullPath {
   '/app': typeof AppRouteWithChildren
   '/demo-preview': typeof DemoPreviewRoute
   '/login': typeof LoginRoute
+  '/app/activity': typeof AppActivityRoute
   '/app/agents': typeof AppAgentsRouteWithChildren
   '/app/branches': typeof AppBranchesRoute
   '/app/changes': typeof AppChangesRoute
@@ -171,6 +178,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/demo-preview': typeof DemoPreviewRoute
   '/login': typeof LoginRoute
+  '/app/activity': typeof AppActivityRoute
   '/app/agents': typeof AppAgentsRouteWithChildren
   '/app/branches': typeof AppBranchesRoute
   '/app/changes': typeof AppChangesRoute
@@ -196,6 +204,7 @@ export interface FileRoutesById {
   '/app': typeof AppRouteWithChildren
   '/demo-preview': typeof DemoPreviewRoute
   '/login': typeof LoginRoute
+  '/app/activity': typeof AppActivityRoute
   '/app/agents': typeof AppAgentsRouteWithChildren
   '/app/branches': typeof AppBranchesRoute
   '/app/changes': typeof AppChangesRoute
@@ -222,6 +231,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/demo-preview'
     | '/login'
+    | '/app/activity'
     | '/app/agents'
     | '/app/branches'
     | '/app/changes'
@@ -245,6 +255,7 @@ export interface FileRouteTypes {
     | '/'
     | '/demo-preview'
     | '/login'
+    | '/app/activity'
     | '/app/agents'
     | '/app/branches'
     | '/app/changes'
@@ -269,6 +280,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/demo-preview'
     | '/login'
+    | '/app/activity'
     | '/app/agents'
     | '/app/branches'
     | '/app/changes'
@@ -445,6 +457,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAgentsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/activity': {
+      id: '/app/activity'
+      path: '/activity'
+      fullPath: '/app/activity'
+      preLoaderRoute: typeof AppActivityRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/agents/$agentId': {
       id: '/app/agents/$agentId'
       path: '/$agentId'
@@ -468,6 +487,7 @@ const AppAgentsRouteWithChildren = AppAgentsRoute._addFileChildren(
 )
 
 interface AppRouteChildren {
+  AppActivityRoute: typeof AppActivityRoute
   AppAgentsRoute: typeof AppAgentsRouteWithChildren
   AppBranchesRoute: typeof AppBranchesRoute
   AppChangesRoute: typeof AppChangesRoute
@@ -488,6 +508,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppActivityRoute: AppActivityRoute,
   AppAgentsRoute: AppAgentsRouteWithChildren,
   AppBranchesRoute: AppBranchesRoute,
   AppChangesRoute: AppChangesRoute,

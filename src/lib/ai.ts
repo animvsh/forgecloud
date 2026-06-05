@@ -162,6 +162,7 @@ Rules:
 - Generate 4-8 features that cover a complete v1 of what the user asked for
 - For a CRM: lead dashboard, add lead form, lead detail, notes, follow-up status, login
 - For a waitlist: landing page, signup form, dashboard, email confirmation
+- For a POS/restaurant app: checkout, menu editor, order queue, payments, daily report, deploy
 - For an internal tool: list view, detail view, edit form, search, login
 - riskLevel: "low" = new file/component, "med" = changes existing behavior, "high" = modifies database schema or production deploy
 - estimatedFiles: rough count of files this feature would touch (1-15)
@@ -305,6 +306,75 @@ function fallbackPlan(prompt: string): BuildPlan {
         {
           title: "Preview deploy",
           description: "Live preview URL",
+          ownerAgent: "DevOps Agent",
+          riskLevel: "low",
+          estimatedFiles: 1,
+        },
+      ],
+    };
+  }
+  if (
+    lower.includes("pos") ||
+    lower.includes("point of sale") ||
+    lower.includes("pizza") ||
+    lower.includes("restaurant") ||
+    lower.includes("checkout")
+  ) {
+    return {
+      summary:
+        "A readable restaurant POS system with checkout, menu management, order tracking, and a live preview.",
+      suggestedProjectName: "Pizza POS",
+      suggestedStyle: "Stripe-modern",
+      features: [
+        {
+          title: "POS landing",
+          description: "A clean first screen that explains the pizza shop POS and opens checkout.",
+          ownerAgent: "Design Agent",
+          riskLevel: "low",
+          estimatedFiles: 3,
+        },
+        {
+          title: "Menu checkout",
+          description:
+            "Let staff add pizzas, sides, and drinks to a cart with totals shown clearly.",
+          ownerAgent: "Frontend Agent",
+          riskLevel: "low",
+          estimatedFiles: 5,
+        },
+        {
+          title: "Order queue",
+          description:
+            "Show incoming orders by status so the kitchen can mark them cooking and ready.",
+          ownerAgent: "Frontend Agent",
+          riskLevel: "low",
+          estimatedFiles: 4,
+        },
+        {
+          title: "Menu editor",
+          description:
+            "Let the owner update prices, availability, and specials without touching code.",
+          ownerAgent: "Backend Agent",
+          riskLevel: "med",
+          estimatedFiles: 4,
+        },
+        {
+          title: "Payment guard",
+          description:
+            "Add the payment handoff and require human approval before real money handling goes live.",
+          ownerAgent: "Safety Agent",
+          riskLevel: "high",
+          estimatedFiles: 3,
+        },
+        {
+          title: "Daily report",
+          description: "Summarize orders, revenue, popular items, and slow hours in plain English.",
+          ownerAgent: "QA Agent",
+          riskLevel: "low",
+          estimatedFiles: 3,
+        },
+        {
+          title: "Live deploy",
+          description: "Publish the approved POS preview and keep a rollback point.",
           ownerAgent: "DevOps Agent",
           riskLevel: "low",
           estimatedFiles: 1,

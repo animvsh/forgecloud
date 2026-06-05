@@ -18,6 +18,8 @@ type SuggestedApp = {
   icon: string;
   uses_connections: string;
   sample_features: string;
+  source?: string | null;
+  evidence?: string | null;
 };
 
 type Connection = {
@@ -72,6 +74,7 @@ function SuggestedAppsScreen() {
 
   const apps: SuggestedApp[] = data.suggestedApps ?? [];
   const connections: Connection[] = data.connections ?? [];
+  const composio = data.composio;
 
   function lookupConnection(provider: string) {
     return connections.find((c) => c.provider === provider);
@@ -101,11 +104,12 @@ function SuggestedAppsScreen() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
       <ScreenHeader
         title="Apps I can build for you"
-        subtitle="Based on the data I found. Pick one to start."
+        subtitle="Suggestions are generated from Composio-managed tool signals. Pick one to start."
         action={
           <div className="hidden sm:flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
             <Sparkles className="size-3.5" />
-            {apps.length} suggestion{apps.length === 1 ? "" : "s"}
+            Composio {composio?.mode ?? "demo"} · {apps.length} suggestion
+            {apps.length === 1 ? "" : "s"}
           </div>
         }
       />
@@ -128,6 +132,7 @@ function SuggestedAppsScreen() {
           {apps.map((app) => {
             const features = parseJsonArray(app.sample_features);
             const usesProviders = parseJsonArray(app.uses_connections);
+            const evidence = parseJsonArray(app.evidence);
             const accent = accentFor(app.slug ?? app.id);
             const busy = busyId === app.id;
             return (
@@ -162,7 +167,7 @@ function SuggestedAppsScreen() {
                 {usesProviders.length > 0 && (
                   <div className="mt-4">
                     <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Uses
+                      Uses through Composio
                     </div>
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
                       {usesProviders.map((provider) => {
@@ -178,6 +183,21 @@ function SuggestedAppsScreen() {
                         );
                       })}
                     </div>
+                  </div>
+                )}
+
+                {evidence.length > 0 && (
+                  <div className="mt-4 rounded-2xl bg-muted/40 px-3 py-2.5">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Why ForgeCloud suggested this
+                    </div>
+                    <ul className="mt-1.5 space-y-1">
+                      {evidence.slice(0, 3).map((item, idx) => (
+                        <li key={idx} className="text-xs text-muted-foreground">
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
 

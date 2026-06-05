@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, useMatchRoute } from "@tanstack/react-router";
 import { ScreenHeader } from "@/components/ScreenHeader";
-import { Bot, Loader2 } from "lucide-react";
+import { Bot, GitPullRequest, Loader2, Rocket } from "lucide-react";
 import { useForgeState } from "@/lib/client";
 import type { Agent, PullRequest, Task } from "@/lib/db";
 
@@ -43,10 +43,12 @@ function AgentsScreen() {
     );
   }
 
-  const agents = data.agents;
-  const tasks = data.tasks;
+  const agents = (data.agents ?? []) as Agent[];
+  const tasks = (data.tasks ?? []) as Task[];
   const working = agents.filter((a) => a.status === "working").length;
   const idle = agents.filter((a) => a.status === "idle").length;
+  const rocketRide = data.rocketRide;
+  const rocketRuns = (data.rocketRideRuns ?? []) as RocketRideRun[];
 
   return (
     <div>
@@ -54,6 +56,45 @@ function AgentsScreen() {
         title="Agent team"
         subtitle={`${agents.length} agents · ${working} working · ${idle} idle`}
       />
+
+      <section className="mt-6 rounded-2xl border border-border bg-card p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-violet/15 text-violet">
+              <Rocket className="size-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold">Rocket Ride workflow engine</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {rocketRide?.detail ?? "Local workflow engine is ready."}
+              </p>
+            </div>
+          </div>
+          <span className="rounded-full border border-violet/20 bg-violet/10 px-3 py-1 text-[11px] font-semibold uppercase text-violet">
+            {rocketRide?.configured ? "Webhook connected" : "Local demo mode"}
+          </span>
+        </div>
+        {rocketRuns.length > 0 && (
+          <div className="mt-4 grid gap-2 md:grid-cols-3">
+            {rocketRuns.slice(0, 3).map((run) => (
+              <Link
+                key={run.id}
+                to="/app/activity"
+                className="rounded-xl border border-border bg-background p-3 text-xs hover:bg-muted"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold">{run.workflow_type.replace(/_/g, " ")}</span>
+                  <WorkflowStatus status={run.status} />
+                </div>
+                <div className="mt-2 flex items-center gap-1.5 text-muted-foreground">
+                  <GitPullRequest className="size-3" />
+                  <span>{run.pr_id ? "PR linked" : run.task_id ? "Task linked" : run.mode}</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
 
       <section className="mt-6">
         <h2 className="text-base font-semibold tracking-tight">Agent activity</h2>
@@ -88,6 +129,15 @@ function AgentsScreen() {
     </div>
   );
 }
+
+type RocketRideRun = {
+  id: string;
+  workflow_type: string;
+  status: string;
+  mode: string;
+  task_id?: string | null;
+  pr_id?: string | null;
+};
 
 function AgentCard({
   agent,
@@ -441,6 +491,22 @@ function StatusPill({ status }: { status: string }) {
   return (
     <span
       className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${colors[status] ?? "bg-muted"}`}
+    >
+      {status}
+    </span>
+  );
+}
+
+function WorkflowStatus({ status }: { status: string }) {
+  const colors: Record<string, string> = {
+    completed: "bg-mint/15 text-mint",
+    running: "bg-sky/15 text-sky",
+    queued: "bg-amber/15 text-amber",
+    failed: "bg-coral/15 text-coral",
+  };
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${colors[status] ?? "bg-muted text-muted-foreground"}`}
     >
       {status}
     </span>
