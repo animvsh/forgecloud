@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+      - codex-forgecloud-prod-readiness
+  workflow_dispatch:
   pull_request:
 
 permissions:
