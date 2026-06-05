@@ -101,6 +101,7 @@ import {
 import { getRuntimeArtifactRoot } from "../lib/runtime";
 import {
   archiveBranch,
+  archiveWorktree,
   createNotification,
   listBranches,
   listCommits,
@@ -4167,6 +4168,7 @@ async function handleListWorktrees(_req: IncomingMessage, res: ServerResponse, r
 }
 const SpawnWtSchema = z.object({
   branchId: z.string().min(1).optional(),
+  agentId: z.string().min(1).optional(),
   name: z.string().min(1).max(80),
 });
 async function handleSpawnWorktree(req: IncomingMessage, res: ServerResponse, requestId: string) {
@@ -4177,12 +4179,33 @@ async function handleSpawnWorktree(req: IncomingMessage, res: ServerResponse, re
   if (parsed.data.branchId && !getScopedBranch(parsed.data.branchId)) {
     return sendError(res, 404, "Branch not found", requestId);
   }
+  if (parsed.data.agentId && !getScopedAgent(parsed.data.agentId)) {
+    return sendError(res, 404, "Agent not found", requestId);
+  }
   const wt = spawnWorktree({
     projectId,
     branchId: parsed.data.branchId ?? null,
     name: parsed.data.name,
+    assignedAgentId: parsed.data.agentId ?? null,
     previewUrl: `https://wt-${Math.random().toString(36).slice(2, 6)}.forgecloud.dev`,
   });
+  const butterbase = getButterbaseRepository();
+  if (butterbase.mode === "remote") await butterbase.syncWorktree(wt);
+  sendJson(res, 200, { ok: true, worktree: wt }, requestId);
+}
+const ArchiveWorktreeSchema = z.object({ worktreeId: z.string().min(1) });
+async function handleArchiveWorktree(req: IncomingMessage, res: ServerResponse, requestId: string) {
+  const parsed = ArchiveWorktreeSchema.safeParse(await readJsonBody(req));
+  if (!parsed.success) {
+    return sendError(res, 400, "Invalid payload", requestId, { issues: parsed.error.issues });
+  }
+  const projectId = await getCurrentProjectId();
+  const before = getDb()
+    .prepare("SELECT * FROM worktrees WHERE id = ? AND project_id = ?")
+    .get(parsed.data.worktreeId, projectId);
+  if (!before) return sendError(res, 404, "Worktree not found", requestId);
+  const wt = archiveWorktree(parsed.data.worktreeId);
+  if (!wt) return sendError(res, 404, "Worktree not found", requestId);
   const butterbase = getButterbaseRepository();
   if (butterbase.mode === "remote") await butterbase.syncWorktree(wt);
   sendJson(res, 200, { ok: true, worktree: wt }, requestId);
