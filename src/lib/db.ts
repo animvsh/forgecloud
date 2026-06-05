@@ -9,6 +9,10 @@ const DB_PATH = process.env.INSFORGE_DB_PATH
 
 let _db: Database.Database | null = null;
 
+export function getDbPath(): string {
+  return DB_PATH;
+}
+
 // Use createRequire to load the native module from a CJS context.
 // Top-level await with a dynamic import would force this module to be async,
 // which would ripple through every call site that imports it.
@@ -29,19 +33,6 @@ export function getDb(): Database.Database {
 }
 
 function initSchema(db: Database.Database) {
-  // Additive migrations for columns added after the initial schema. Each
-  // ALTER is wrapped to swallow "duplicate column" errors so re-runs are
-  // safe. New tables are still created via CREATE TABLE IF NOT EXISTS below.
-  const addColumn = (table: string, col: string, def: string) => {
-    try {
-      db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
-    } catch (e) {
-      if (!(e as Error).message.includes("duplicate column")) throw e;
-    }
-  };
-  addColumn("pull_requests", "merged_at", "INTEGER");
-  addColumn("pull_requests", "rolled_back_at", "INTEGER");
-  addColumn("pull_requests", "rolled_back_by", "TEXT");
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -67,6 +58,33 @@ function initSchema(db: Database.Database) {
       value TEXT,
       updated_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
       PRIMARY KEY (workspace_id, key),
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS auth_login_codes (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      workspace_id TEXT NOT NULL,
+      code_hash TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      used_at INTEGER,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+      requested_ip TEXT,
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      workspace_id TEXT NOT NULL,
+      token_hash TEXT NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+      expires_at INTEGER NOT NULL,
+      last_seen_at INTEGER,
+      revoked_at INTEGER,
+      user_agent TEXT,
+      ip_address TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id),
       FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
     );
 
@@ -181,6 +199,51 @@ function initSchema(db: Database.Database) {
       completed_at INTEGER,
       FOREIGN KEY (project_id) REFERENCES projects(id),
       FOREIGN KEY (agent_id) REFERENCES agents(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS runtime_checks (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      agent_run_id TEXT NOT NULL,
+      task_id TEXT,
+      check_type TEXT NOT NULL,
+      status TEXT NOT NULL,
+      command TEXT,
+      exit_code INTEGER,
+      stdout TEXT,
+      stderr TEXT,
+      summary TEXT NOT NULL,
+      artifact_path TEXT,
+      started_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+      completed_at INTEGER,
+      FOREIGN KEY (project_id) REFERENCES projects(id),
+      FOREIGN KEY (agent_run_id) REFERENCES agent_runs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_events (
+      id TEXT PRIMARY KEY,
+      request_id TEXT NOT NULL,
+      workspace_id TEXT,
+      user_id TEXT,
+      route TEXT NOT NULL,
+      method TEXT NOT NULL,
+      permission TEXT,
+      outcome TEXT NOT NULL,
+      status_code INTEGER NOT NULL,
+      error TEXT,
+      ip_address TEXT,
+      user_agent TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+    );
+
+    CREATE TABLE IF NOT EXISTS workspace_usage_events (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      metadata TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
     );
 
     CREATE TABLE IF NOT EXISTS recovery_events (
@@ -337,6 +400,9 @@ function initSchema(db: Database.Database) {
     );
 
     CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
+    CREATE INDEX IF NOT EXISTS idx_auth_login_codes_email ON auth_login_codes(email, workspace_id, expires_at);
+    CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id, workspace_id, expires_at);
+    CREATE INDEX IF NOT EXISTS idx_auth_sessions_hash ON auth_sessions(token_hash);
     CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project_id);
     CREATE INDEX IF NOT EXISTS idx_prs_project ON pull_requests(project_id);
     CREATE INDEX IF NOT EXISTS idx_recovery_project ON recovery_events(project_id);
@@ -345,10 +411,30 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_branches_project ON branches(project_id, status);
     CREATE INDEX IF NOT EXISTS idx_commits_branch ON commits(branch_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_worktrees_project ON worktrees(project_id, status);
+    CREATE INDEX IF NOT EXISTS idx_runtime_checks_run ON runtime_checks(agent_run_id, started_at);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_workspace ON audit_events(workspace_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_usage_events_workspace ON workspace_usage_events(workspace_id, kind, created_at);
   `);
 
-  // Defensive migrations for columns added after release.
-  try { db.exec(`ALTER TABLE pull_requests ADD COLUMN screenshot_url TEXT`); } catch {}
+  // Additive migrations for columns added after the initial schema. Run these
+  // after CREATE TABLE so a brand-new SQLite file can boot cleanly.
+  const addColumn = (table: string, col: string, def: string) => {
+    try {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+    } catch (e) {
+      if (!(e as Error).message.includes("duplicate column")) throw e;
+    }
+  };
+  addColumn("pull_requests", "merged_at", "INTEGER");
+  addColumn("pull_requests", "rolled_back_at", "INTEGER");
+  addColumn("pull_requests", "rolled_back_by", "TEXT");
+  addColumn("pull_requests", "screenshot_url", "TEXT");
+  addColumn("workspaces", "billing_status", "TEXT NOT NULL DEFAULT 'active'");
+  db.exec(`
+    UPDATE pull_requests
+       SET merged_at = COALESCE(merged_at, approved_at)
+     WHERE status = 'approved' AND approved_at IS NOT NULL
+  `);
 }
 
 export type User = {
@@ -365,6 +451,7 @@ export type Workspace = {
   name: string;
   owner_id: string;
   plan: string;
+  billing_status: string;
   created_at: number;
 };
 
@@ -388,6 +475,30 @@ export type TeamMember = {
   role: string;
   permissions: string;
   is_ai: number;
+};
+
+export type AuthLoginCode = {
+  id: string;
+  email: string;
+  workspace_id: string;
+  code_hash: string;
+  expires_at: number;
+  used_at: number | null;
+  created_at: number;
+  requested_ip: string | null;
+};
+
+export type AuthSession = {
+  id: string;
+  user_id: string;
+  workspace_id: string;
+  token_hash: string;
+  created_at: number;
+  expires_at: number;
+  last_seen_at: number | null;
+  revoked_at: number | null;
+  user_agent: string | null;
+  ip_address: string | null;
 };
 
 export type Agent = {
@@ -441,6 +552,9 @@ export type PullRequest = {
   requires_approval: number;
   approver_name: string | null;
   approved_at: number | null;
+  merged_at: number | null;
+  rolled_back_at: number | null;
+  rolled_back_by: string | null;
   created_by_agent_id: string | null;
   files_changed: number;
   created_at: number;
@@ -468,6 +582,48 @@ export type AgentRun = {
   fallback_used: number;
   started_at: number;
   completed_at: number | null;
+};
+
+export type RuntimeCheck = {
+  id: string;
+  project_id: string;
+  agent_run_id: string;
+  task_id: string | null;
+  check_type: string;
+  status: string;
+  command: string | null;
+  exit_code: number | null;
+  stdout: string | null;
+  stderr: string | null;
+  summary: string;
+  artifact_path: string | null;
+  started_at: number;
+  completed_at: number | null;
+};
+
+export type AuditEvent = {
+  id: string;
+  request_id: string;
+  workspace_id: string | null;
+  user_id: string | null;
+  route: string;
+  method: string;
+  permission: string | null;
+  outcome: string;
+  status_code: number;
+  error: string | null;
+  ip_address: string | null;
+  user_agent: string | null;
+  created_at: number;
+};
+
+export type WorkspaceUsageEvent = {
+  id: string;
+  workspace_id: string;
+  kind: string;
+  quantity: number;
+  metadata: string | null;
+  created_at: number;
 };
 
 export type RecoveryEvent = {

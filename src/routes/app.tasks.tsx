@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Loader2, Play, AlertTriangle, Sparkles, Plus, X } from "lucide-react";
-import { useForgeState, useRunTask, useRunAllTasks, useAddTask } from "@/lib/client";
+import { useForgeState, useRunTask, useRunAllTasks, useAddTask, useRunMyTasks } from "@/lib/client";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -34,6 +34,7 @@ function TasksScreen() {
   const { data, isLoading } = useForgeState();
   const runTask = useRunTask();
   const runAll = useRunAllTasks();
+  const runMine = useRunMyTasks();
   const addTask = useAddTask();
   const [running, setRunning] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -75,6 +76,31 @@ function TasksScreen() {
       setRunning(null);
     }
   }
+
+  async function runMineAndAutoApprove() {
+    if (running !== null) return;
+    setRunning("mine");
+    try {
+      const me = data?.user?.name ?? "Sal";
+      const result = await runMine.mutateAsync({
+        reviewerName: me,
+        includeReviewQueue: true,
+      });
+      toast.success(
+        `Ran ${result.count} task(s) as ${result.reviewerName} — open PRs auto-approved.`,
+      );
+    } catch (err) {
+      toast.error("Couldn't run my tasks", { description: (err as Error).message });
+    } finally {
+      setRunning(null);
+    }
+  }
+
+  const myBacklogCount = tasks.filter(
+    (t) =>
+      t.status === "backlog" &&
+      (t.reviewer_name === (data?.user?.name ?? "Sal") || !t.reviewer_name),
+  ).length;
 
   async function submitNewTask() {
     const title = newTitle.trim();
@@ -123,6 +149,19 @@ function TasksScreen() {
             </button>
             {hasBacklog && (
               <>
+                <button
+                  onClick={runMineAndAutoApprove}
+                  disabled={running !== null}
+                  title={`Run every task assigned to ${data?.user?.display_name ?? "me"} and auto-approve low-risk PRs`}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-foreground px-3 py-1.5 text-xs text-background hover:opacity-90 transition-all disabled:opacity-40"
+                >
+                  {running === "mine" ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <Play className="size-3" />
+                  )}
+                  Do my tasks ({myBacklogCount})
+                </button>
                 <button
                   onClick={() => runEverything("build_failed")}
                   disabled={running !== null}

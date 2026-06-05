@@ -48,9 +48,7 @@ const candidates = [
       max_tokens: 8,
     },
     parse: (j) =>
-      j?.choices?.[0]?.message?.content ??
-      j?.reply ??
-      j?.choices?.[0]?.messages?.[0]?.text,
+      j?.choices?.[0]?.message?.content ?? j?.reply ?? j?.choices?.[0]?.messages?.[0]?.text,
   },
   {
     name: "minimax.chat/v1/text/chatcompletion_v2 (native legacy)",

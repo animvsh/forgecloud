@@ -52,11 +52,17 @@ export function HeroDiagram() {
         <MessageSquare className="size-6 text-foreground/80 sm:size-9" />
       </Node>
 
-      <Node className="size-12 sm:size-16" style={{ left: "19%", top: "14%", background: "var(--amber)" }}>
+      <Node
+        className="size-12 sm:size-16"
+        style={{ left: "19%", top: "14%", background: "var(--amber)" }}
+      >
         <Sparkles className="size-5 text-foreground sm:size-7" />
       </Node>
 
-      <Node className="size-12 sm:size-16" style={{ left: "19%", top: "54%", background: "var(--sky)" }}>
+      <Node
+        className="size-12 sm:size-16"
+        style={{ left: "19%", top: "54%", background: "var(--sky)" }}
+      >
         <GitBranch className="size-5 text-foreground sm:size-7" />
       </Node>
 
@@ -67,7 +73,10 @@ export function HeroDiagram() {
         <Check className="size-9 text-white sm:size-14" strokeWidth={2.5} />
       </Node>
 
-      <Node className="size-12 sm:size-16" style={{ left: "68%", top: "14%", background: "var(--coral)" }}>
+      <Node
+        className="size-12 sm:size-16"
+        style={{ left: "68%", top: "14%", background: "var(--coral)" }}
+      >
         <Shield className="size-5 text-white sm:size-7" />
       </Node>
 

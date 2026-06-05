@@ -9,29 +9,36 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { handleApiRequest } from "./src/server/api-handler";
 
 function apiPlugin() {
+  const handler = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    next: () => void,
+  ): Promise<void> => {
+    const url = req.url ?? "";
+    if (url.startsWith("/api/")) {
+      console.log("[forgecloud-api] handling", req.method, url);
+      try {
+        const handled = await handleApiRequest(req, res);
+        if (handled) return;
+      } catch (e) {
+        console.error("[/api] error:", e);
+        if (!res.headersSent) {
+          res.writeHead(500, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: String(e) }));
+        }
+        return;
+      }
+    }
+    next();
+  };
   return {
     name: "forgecloud-api-middleware",
     configureServer(server: any) {
       console.log("[forgecloud-api] configuring server middleware");
-      // Insert at the beginning so it runs before vite's transformIndexHtml etc.
-      server.middlewares.use(async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
-        const url = req.url ?? "";
-        if (url.startsWith("/api/")) {
-          console.log("[forgecloud-api] handling", req.method, url);
-          try {
-            const handled = await handleApiRequest(req, res);
-            if (handled) return;
-          } catch (e) {
-            console.error("[/api] error:", e);
-            if (!res.headersSent) {
-              res.writeHead(500, { "content-type": "application/json" });
-              res.end(JSON.stringify({ error: String(e) }));
-            }
-            return;
-          }
-        }
-        next();
-      });
+      // Register synchronously so this runs BEFORE Vite's internal
+      // TanStack Start/Nitro middleware (which would otherwise consume
+      // the POST body and return a 404 HTML "Page not found" page).
+      server.middlewares.use(handler);
     },
   };
 }

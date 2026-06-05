@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ArrowRight, Check, Hammer, Loader2, Sparkles } from "lucide-react";
-import { useBuildSuggestedApp, useForgeState, useRunAllTasks } from "@/lib/client";
+import { useBuildSuggestedApp, useForgeState } from "@/lib/client";
 import { ScreenHeader } from "@/components/ScreenHeader";
 
 export const Route = createFileRoute("/app/suggested-apps")({
@@ -57,7 +57,6 @@ function SuggestedAppsScreen() {
   const navigate = useNavigate();
   const { data, isLoading } = useForgeState();
   const buildMutation = useBuildSuggestedApp();
-  const runAll = useRunAllTasks();
   const [busyId, setBusyId] = useState<string | null>(null);
 
   if (isLoading || !data) {
@@ -81,19 +80,16 @@ function SuggestedAppsScreen() {
   async function handleBuild(app: SuggestedApp) {
     setBusyId(app.id);
     try {
-      const result = (await buildMutation.mutateAsync({ appId: app.id })) as { tasks?: any[] } | undefined;
+      const result = (await buildMutation.mutateAsync({ appId: app.id })) as
+        | { tasks?: unknown[] }
+        | undefined;
       const total = result?.tasks?.length ?? 0;
-      // Auto-run the agents in the background; the 2.5s poll on /app picks up
-      // the live building state.
-      runAll.mutateAsync({}).catch((err) => {
-        console.error("auto run-all failed", err);
-      });
-      toast.success(`Started building ${app.title}`, {
+      toast.success(`Plan ready for ${app.title}`, {
         description: total
-          ? `Spinning up agents on ${total} task${total === 1 ? "" : "s"}.`
-          : "Agents are kicking off the first tasks now.",
+          ? `${total} task${total === 1 ? "" : "s"} queued. Review before agents start.`
+          : "Review the plan before agents start.",
       });
-      navigate({ to: "/app" });
+      navigate({ to: "/app/chat" });
     } catch (err) {
       toast.error("Build failed to start", { description: (err as Error).message });
     } finally {
@@ -196,7 +192,7 @@ function SuggestedAppsScreen() {
                     ) : (
                       <Hammer className="size-4" />
                     )}
-                    Build this app
+                    Generate plan
                     <ArrowRight className="size-4" />
                   </button>
                 </div>

@@ -25,6 +25,119 @@ export type BuildPlan = {
   suggestedStyle: string;
 };
 
+export type ChatIntent =
+  | {
+      kind: "explain_changes";
+      title: string;
+      description: string;
+      ownerAgent: "Product Agent";
+      riskLevel: "low";
+    }
+  | {
+      kind: "deploy" | "rollback" | "database" | "auth" | "design" | "qa" | "backend" | "task";
+      title: string;
+      description: string;
+      ownerAgent:
+        | "DevOps Agent"
+        | "Recovery Agent"
+        | "Backend Agent"
+        | "Auth Agent"
+        | "Design Agent"
+        | "QA Agent"
+        | "Frontend Agent";
+      riskLevel: "low" | "med" | "high";
+    };
+
+export function classifyChatIntent(message: string): ChatIntent {
+  const text = message.trim();
+  const lower = text.toLowerCase();
+  const titleFrom = (fallback: string) => text.slice(0, 72).trim() || fallback;
+
+  if (
+    /\b(show|summari[sz]e|explain|what)\b.*\b(changed|changes|diff|pr|pull request)\b/.test(lower)
+  ) {
+    return {
+      kind: "explain_changes",
+      title: "Explain latest changes",
+      description: text,
+      ownerAgent: "Product Agent",
+      riskLevel: "low",
+    };
+  }
+  if (/\b(rollback|roll back|revert|undo live|restore previous)\b/.test(lower)) {
+    return {
+      kind: "rollback",
+      title: "Prepare rollback",
+      description: text,
+      ownerAgent: "Recovery Agent",
+      riskLevel: "high",
+    };
+  }
+  if (/\b(deploy|ship|release|publish|go live|production)\b/.test(lower)) {
+    return {
+      kind: "deploy",
+      title: "Prepare production deploy",
+      description: text,
+      ownerAgent: "DevOps Agent",
+      riskLevel: "high",
+    };
+  }
+  if (
+    /\b(login|auth|sign in|signup|sign up|password|permission|role|member access)\b/.test(lower)
+  ) {
+    return {
+      kind: "auth",
+      title: titleFrom("Add team access"),
+      description: text,
+      ownerAgent: "Auth Agent",
+      riskLevel: "med",
+    };
+  }
+  if (/\b(database|schema|table|save|persist|storage|api|backend|webhook)\b/.test(lower)) {
+    return {
+      kind: "database",
+      title: titleFrom("Add backend persistence"),
+      description: text,
+      ownerAgent: "Backend Agent",
+      riskLevel: "med",
+    };
+  }
+  if (/\b(premium|polish|design|style|layout|visual|mobile|responsive|brand)\b/.test(lower)) {
+    return {
+      kind: "design",
+      title: titleFrom("Improve product design"),
+      description: text,
+      ownerAgent: "Design Agent",
+      riskLevel: "low",
+    };
+  }
+  if (/\b(test|qa|bug|broken|fix|regression|error|crash)\b/.test(lower)) {
+    return {
+      kind: "qa",
+      title: titleFrom("Investigate and fix issue"),
+      description: text,
+      ownerAgent: "QA Agent",
+      riskLevel: "med",
+    };
+  }
+  if (/\b(function|endpoint|integration|connect|sync|import|export)\b/.test(lower)) {
+    return {
+      kind: "backend",
+      title: titleFrom("Build integration workflow"),
+      description: text,
+      ownerAgent: "Backend Agent",
+      riskLevel: "med",
+    };
+  }
+  return {
+    kind: "task",
+    title: titleFrom("Build requested feature"),
+    description: text,
+    ownerAgent: "Frontend Agent",
+    riskLevel: "low",
+  };
+}
+
 const PLAN_SYSTEM = `You are the Product Agent for ForgeCloud, a cloud-based AI software team for non-technical builders.
 
 When a user describes what they want to build, you return a structured build plan as JSON. The plan is shown to the user in plain English BEFORE any code is written. The user reviews and approves it.
@@ -110,12 +223,48 @@ function fallbackPlan(prompt: string): BuildPlan {
       suggestedProjectName: "Sales CRM",
       suggestedStyle: "Notion-clean",
       features: [
-        { title: "Lead dashboard", description: "View all leads in a sortable table", ownerAgent: "Frontend Agent", riskLevel: "low", estimatedFiles: 4 },
-        { title: "Add lead form", description: "Form to create a new lead with name, email, company", ownerAgent: "Frontend Agent", riskLevel: "low", estimatedFiles: 3 },
-        { title: "Lead notes", description: "Add and view notes attached to each lead", ownerAgent: "Backend Agent", riskLevel: "low", estimatedFiles: 2 },
-        { title: "Follow-up status", description: "Mark leads as New, Contacted, Won, or Lost", ownerAgent: "Backend Agent", riskLevel: "med", estimatedFiles: 2 },
-        { title: "Login page", description: "Only team members can access the CRM", ownerAgent: "Auth Agent", riskLevel: "med", estimatedFiles: 4 },
-        { title: "Preview deploy", description: "Live preview URL for the team to test", ownerAgent: "DevOps Agent", riskLevel: "low", estimatedFiles: 1 },
+        {
+          title: "Lead dashboard",
+          description: "View all leads in a sortable table",
+          ownerAgent: "Frontend Agent",
+          riskLevel: "low",
+          estimatedFiles: 4,
+        },
+        {
+          title: "Add lead form",
+          description: "Form to create a new lead with name, email, company",
+          ownerAgent: "Frontend Agent",
+          riskLevel: "low",
+          estimatedFiles: 3,
+        },
+        {
+          title: "Lead notes",
+          description: "Add and view notes attached to each lead",
+          ownerAgent: "Backend Agent",
+          riskLevel: "low",
+          estimatedFiles: 2,
+        },
+        {
+          title: "Follow-up status",
+          description: "Mark leads as New, Contacted, Won, or Lost",
+          ownerAgent: "Backend Agent",
+          riskLevel: "med",
+          estimatedFiles: 2,
+        },
+        {
+          title: "Login page",
+          description: "Only team members can access the CRM",
+          ownerAgent: "Auth Agent",
+          riskLevel: "med",
+          estimatedFiles: 4,
+        },
+        {
+          title: "Preview deploy",
+          description: "Live preview URL for the team to test",
+          ownerAgent: "DevOps Agent",
+          riskLevel: "low",
+          estimatedFiles: 1,
+        },
       ],
     };
   }
@@ -125,11 +274,41 @@ function fallbackPlan(prompt: string): BuildPlan {
       suggestedProjectName: "Waitlist",
       suggestedStyle: "Stripe-modern",
       features: [
-        { title: "Landing page", description: "Hero, features, and call-to-action", ownerAgent: "Design Agent", riskLevel: "low", estimatedFiles: 3 },
-        { title: "Waitlist form", description: "Email signup with confirmation", ownerAgent: "Frontend Agent", riskLevel: "low", estimatedFiles: 2 },
-        { title: "Admin dashboard", description: "View signups and export to CSV", ownerAgent: "Frontend Agent", riskLevel: "low", estimatedFiles: 3 },
-        { title: "Email confirmation", description: "Send welcome email on signup", ownerAgent: "Backend Agent", riskLevel: "med", estimatedFiles: 2 },
-        { title: "Preview deploy", description: "Live preview URL", ownerAgent: "DevOps Agent", riskLevel: "low", estimatedFiles: 1 },
+        {
+          title: "Landing page",
+          description: "Hero, features, and call-to-action",
+          ownerAgent: "Design Agent",
+          riskLevel: "low",
+          estimatedFiles: 3,
+        },
+        {
+          title: "Waitlist form",
+          description: "Email signup with confirmation",
+          ownerAgent: "Frontend Agent",
+          riskLevel: "low",
+          estimatedFiles: 2,
+        },
+        {
+          title: "Admin dashboard",
+          description: "View signups and export to CSV",
+          ownerAgent: "Frontend Agent",
+          riskLevel: "low",
+          estimatedFiles: 3,
+        },
+        {
+          title: "Email confirmation",
+          description: "Send welcome email on signup",
+          ownerAgent: "Backend Agent",
+          riskLevel: "med",
+          estimatedFiles: 2,
+        },
+        {
+          title: "Preview deploy",
+          description: "Live preview URL",
+          ownerAgent: "DevOps Agent",
+          riskLevel: "low",
+          estimatedFiles: 1,
+        },
       ],
     };
   }
@@ -138,12 +317,48 @@ function fallbackPlan(prompt: string): BuildPlan {
     suggestedProjectName: "New App",
     suggestedStyle: "Modern clean",
     features: [
-      { title: "Main view", description: "Primary screen of the app", ownerAgent: "Frontend Agent", riskLevel: "low", estimatedFiles: 3 },
-      { title: "Detail view", description: "Drill-down on each item", ownerAgent: "Frontend Agent", riskLevel: "low", estimatedFiles: 2 },
-      { title: "Form for new items", description: "Create new entries with validation", ownerAgent: "Frontend Agent", riskLevel: "low", estimatedFiles: 2 },
-      { title: "Data persistence", description: "Save and load from database", ownerAgent: "Backend Agent", riskLevel: "med", estimatedFiles: 3 },
-      { title: "Login", description: "Team access only", ownerAgent: "Auth Agent", riskLevel: "med", estimatedFiles: 4 },
-      { title: "Preview deploy", description: "Live preview URL", ownerAgent: "DevOps Agent", riskLevel: "low", estimatedFiles: 1 },
+      {
+        title: "Main view",
+        description: "Primary screen of the app",
+        ownerAgent: "Frontend Agent",
+        riskLevel: "low",
+        estimatedFiles: 3,
+      },
+      {
+        title: "Detail view",
+        description: "Drill-down on each item",
+        ownerAgent: "Frontend Agent",
+        riskLevel: "low",
+        estimatedFiles: 2,
+      },
+      {
+        title: "Form for new items",
+        description: "Create new entries with validation",
+        ownerAgent: "Frontend Agent",
+        riskLevel: "low",
+        estimatedFiles: 2,
+      },
+      {
+        title: "Data persistence",
+        description: "Save and load from database",
+        ownerAgent: "Backend Agent",
+        riskLevel: "med",
+        estimatedFiles: 3,
+      },
+      {
+        title: "Login",
+        description: "Team access only",
+        ownerAgent: "Auth Agent",
+        riskLevel: "med",
+        estimatedFiles: 4,
+      },
+      {
+        title: "Preview deploy",
+        description: "Live preview URL",
+        ownerAgent: "DevOps Agent",
+        riskLevel: "low",
+        estimatedFiles: 1,
+      },
     ],
   };
 }
@@ -233,7 +448,8 @@ export async function generateCode(
     return parsed.files.slice(0, 3).map((f) => ({
       path: f.path,
       content: f.content,
-      language: f.language ?? (f.path.endsWith(".tsx") ? "tsx" : f.path.endsWith(".ts") ? "ts" : "txt"),
+      language:
+        f.language ?? (f.path.endsWith(".tsx") ? "tsx" : f.path.endsWith(".ts") ? "ts" : "txt"),
     }));
   } catch {
     return templateCode(featureTitle, ownerAgent);
@@ -241,11 +457,12 @@ export async function generateCode(
 }
 
 function templateCode(featureTitle: string, ownerAgent: string): CodeFile[] {
-  const slug = featureTitle
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 40) || "feature";
+  const slug =
+    featureTitle
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 40) || "feature";
   const Pascal = slug.replace(/(^|-)(.)/g, (_, __, c) => c.toUpperCase()).replace(/-/g, "");
   if (/qa|test/i.test(ownerAgent)) {
     return [
@@ -410,7 +627,10 @@ export type CommentTask = {
   riskLevel: "low" | "med" | "high";
 };
 
-export async function commentToTask(commentText: string, selector?: string | null): Promise<CommentTask> {
+export async function commentToTask(
+  commentText: string,
+  selector?: string | null,
+): Promise<CommentTask> {
   const provider = getProvider();
   const fallback: CommentTask = {
     title: commentText.slice(0, 60),

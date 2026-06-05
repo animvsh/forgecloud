@@ -40,7 +40,10 @@ export function ProjectSwitcher() {
   async function handleCreate() {
     if (!name.trim()) return;
     try {
-      await newProject.mutateAsync({ name: name.trim(), description: description.trim() || undefined });
+      await newProject.mutateAsync({
+        name: name.trim(),
+        description: description.trim() || undefined,
+      });
       toast.success(`Project created: ${name.trim()}`);
       setName("");
       setDescription("");
@@ -84,7 +87,9 @@ export function ProjectSwitcher() {
           </div>
           <div className="max-h-64 overflow-y-auto">
             {projects.length === 0 && (
-              <div className="px-3 py-4 text-center text-xs text-muted-foreground">No projects yet.</div>
+              <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+                No projects yet.
+              </div>
             )}
             {projects.map((p) => {
               const active = current?.id === p.id;
@@ -106,7 +111,9 @@ export function ProjectSwitcher() {
                   <span className="flex-1 truncate">
                     <span className="font-medium">{p.name}</span>
                     {p.description && (
-                      <span className="ml-1 text-xs text-muted-foreground">— {p.description.slice(0, 40)}</span>
+                      <span className="ml-1 text-xs text-muted-foreground">
+                        — {p.description.slice(0, 40)}
+                      </span>
                     )}
                   </span>
                   {switching === p.id ? (
@@ -136,7 +143,11 @@ export function ProjectSwitcher() {
               />
               <div className="flex items-center justify-end gap-1.5">
                 <button
-                  onClick={() => { setCreating(false); setName(""); setDescription(""); }}
+                  onClick={() => {
+                    setCreating(false);
+                    setName("");
+                    setDescription("");
+                  }}
                   className="rounded-full border border-border px-3 py-1 text-xs hover:bg-muted"
                 >
                   Cancel
@@ -146,7 +157,11 @@ export function ProjectSwitcher() {
                   disabled={!name.trim() || newProject.isPending}
                   className="inline-flex items-center gap-1 rounded-full bg-brand px-3 py-1 text-xs font-medium text-brand-foreground hover:brightness-105 disabled:opacity-40"
                 >
-                  {newProject.isPending ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />}
+                  {newProject.isPending ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <Plus className="size-3" />
+                  )}
                   Create
                 </button>
               </div>

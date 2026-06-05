@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 const POLL_INTERVAL = 2500;
@@ -6,29 +7,114 @@ const POLL_INTERVAL = 2500;
 // this version (Seroval serialization bug), so all server calls go through
 // fetch() against `/api/*` endpoints handled by `src/server/api-handler.ts`.
 
+function apiUrl(path: string): string {
+  const base = import.meta.env.VITE_API_BASE?.trim().replace(/\/+$/, "");
+  if (!base) return path;
+  return `${base}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
 async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(path, { method: "GET" });
-  if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
+  const res = await fetch(apiUrl(path), { method: "GET", credentials: "include" });
+  if (!res.ok) throw new Error(await formatApiError(res, `GET ${path}`));
   return (await res.json()) as T;
 }
 
 async function apiPost<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetch(apiUrl(path), {
     method: "POST",
+    credentials: "include",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body ?? {}),
   });
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`POST ${path} failed: ${res.status} ${text}`);
+    throw new Error(await formatApiError(res, `POST ${path}`));
   }
   return (await res.json()) as T;
+}
+
+async function apiDelete<T>(path: string): Promise<T> {
+  const res = await fetch(apiUrl(path), { method: "DELETE", credentials: "include" });
+  if (!res.ok) {
+    throw new Error(await formatApiError(res, `DELETE ${path}`));
+  }
+  return (await res.json()) as T;
+}
+
+async function formatApiError(res: Response, label: string) {
+  const text = await res.text().catch(() => "");
+  let payload: any = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+    payload = null;
+  }
+  const code = payload?.code ?? payload?.error ?? payload?.reason;
+  if (code === "plan_limit_exceeded") {
+    return "This workspace hit its plan limit. Open Settings to review usage or upgrade the plan.";
+  }
+  if (code === "billing_inactive") {
+    return "Billing is inactive for this workspace. Restore billing in Settings before continuing.";
+  }
+  if (res.status === 401) return "Your session expired. Sign in again to keep working.";
+  if (res.status === 403) return "Your role does not have permission to do that in this workspace.";
+  if (res.status === 409 && payload?.message) return payload.message;
+  return payload?.message ?? `${label} failed with status ${res.status}`;
+}
+
+function shouldRetryApiError(_failureCount: number, error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (/session expired|sign in|permission/i.test(message)) return false;
+  return true;
+}
+
+export function useAuthSession() {
+  return useQuery({
+    queryKey: ["auth-session"],
+    queryFn: () => apiGet<any>("/api/auth/session"),
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useRequestLogin() {
+  return useMutation({
+    mutationFn: (vars: { email: string; workspaceId?: string }) =>
+      apiPost<{
+        ok: true;
+        delivered: boolean;
+        workspace: { id: string; name: string };
+        code?: string;
+      }>("/api/auth/request-login", vars),
+  });
+}
+
+export function useLogin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { email: string; workspaceId: string; code: string }) =>
+      apiPost<any>("/api/auth/login", vars),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["auth-session"] });
+      qc.invalidateQueries({ queryKey: ["forge-state"] });
+    },
+  });
+}
+
+export function useLogout() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost<{ ok: true }>("/api/auth/logout", {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["auth-session"] });
+      qc.invalidateQueries({ queryKey: ["forge-state"] });
+    },
+  });
 }
 
 export function useForgeState() {
   return useQuery({
     queryKey: ["forge-state"],
     queryFn: () => apiGet<any>("/api/state"),
+    retry: shouldRetryApiError,
     refetchInterval: POLL_INTERVAL,
     refetchOnWindowFocus: true,
   });
@@ -73,6 +159,44 @@ export function useRunAllTasks() {
   return useMutation({
     mutationFn: (vars: { failureAt?: number; failureType?: string } = {}) =>
       apiPost<any>("/api/run-all", vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
+
+export function useApprovePlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { taskIds: string[] }) => apiPost<any>("/api/approve-plan", vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
+
+export function useRunMyTasks() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { reviewerName?: string; includeReviewQueue?: boolean } = {}) =>
+      apiPost<{ ok: boolean; reviewerName: string; count: number; results: any[] }>(
+        "/api/run-my-tasks",
+        vars,
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
+
+export function useAddTeamMember() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { displayName: string; role?: string; email?: string }) =>
+      apiPost<{ ok: boolean; member: any }>("/api/team", vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
+
+export function useRemoveTeamMember() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { memberId: string }) =>
+      apiDelete<{ ok: boolean; removed: any }>(`/api/team/${encodeURIComponent(vars.memberId)}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }
@@ -178,6 +302,14 @@ export function useAddComment() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (vars: { text: string; selector?: string }) => apiPost<any>("/api/comment", vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
+  });
+}
+
+export function useClearPreviewComments() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiDelete<{ ok: true; removed: number }>("/api/preview-comments"),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["forge-state"] }),
   });
 }

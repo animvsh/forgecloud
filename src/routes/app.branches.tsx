@@ -105,9 +105,7 @@ function BranchesScreen() {
   const mergedBranches = branches.filter((b) => b.status === "merged");
   const activeWorktrees = worktrees.filter((w) => w.status === "active");
 
-  const sortedCommits = [...commits].sort(
-    (a, b) => b.created_at - a.created_at,
-  );
+  const sortedCommits = [...commits].sort((a, b) => b.created_at - a.created_at);
 
   async function onMerge(branchId: string) {
     setBusyBranchId(branchId);

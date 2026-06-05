@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as DemoPreviewRouteImport } from './routes/demo-preview'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as IndexRouteImport } from './routes/index'
@@ -31,6 +32,11 @@ import { Route as AppBranchesRouteImport } from './routes/app.branches'
 import { Route as AppAgentsRouteImport } from './routes/app.agents'
 import { Route as AppAgentsAgentIdRouteImport } from './routes/app.agents.$agentId'
 
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DemoPreviewRoute = DemoPreviewRouteImport.update({
   id: '/demo-preview',
   path: '/demo-preview',
@@ -141,6 +147,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
   '/demo-preview': typeof DemoPreviewRoute
+  '/login': typeof LoginRoute
   '/app/agents': typeof AppAgentsRouteWithChildren
   '/app/branches': typeof AppBranchesRoute
   '/app/changes': typeof AppChangesRoute
@@ -163,6 +170,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/demo-preview': typeof DemoPreviewRoute
+  '/login': typeof LoginRoute
   '/app/agents': typeof AppAgentsRouteWithChildren
   '/app/branches': typeof AppBranchesRoute
   '/app/changes': typeof AppChangesRoute
@@ -187,6 +195,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
   '/demo-preview': typeof DemoPreviewRoute
+  '/login': typeof LoginRoute
   '/app/agents': typeof AppAgentsRouteWithChildren
   '/app/branches': typeof AppBranchesRoute
   '/app/changes': typeof AppChangesRoute
@@ -212,6 +221,7 @@ export interface FileRouteTypes {
     | '/'
     | '/app'
     | '/demo-preview'
+    | '/login'
     | '/app/agents'
     | '/app/branches'
     | '/app/changes'
@@ -234,6 +244,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/demo-preview'
+    | '/login'
     | '/app/agents'
     | '/app/branches'
     | '/app/changes'
@@ -257,6 +268,7 @@ export interface FileRouteTypes {
     | '/'
     | '/app'
     | '/demo-preview'
+    | '/login'
     | '/app/agents'
     | '/app/branches'
     | '/app/changes'
@@ -281,10 +293,18 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
   DemoPreviewRoute: typeof DemoPreviewRoute
+  LoginRoute: typeof LoginRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/demo-preview': {
       id: '/demo-preview'
       path: '/demo-preview'
@@ -493,6 +513,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
   DemoPreviewRoute: DemoPreviewRoute,
+  LoginRoute: LoginRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

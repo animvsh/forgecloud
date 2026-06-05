@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 
 # Install build tools for better-sqlite3 native compile
 RUN apt-get update && apt-get install -y --no-install-recommends \

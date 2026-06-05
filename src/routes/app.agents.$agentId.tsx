@@ -21,6 +21,16 @@ type AgentRun = {
   started_at: number;
   completed_at: number | null;
   task_title?: string | null;
+  runtimeChecks?: RuntimeCheckRow[];
+};
+
+type RuntimeCheckRow = {
+  id: string;
+  check_type: string;
+  status: string;
+  summary: string;
+  artifact_path: string | null;
+  completed_at: number | null;
 };
 
 type ChangeRow = {
@@ -217,41 +227,69 @@ function AgentDetailScreen() {
                 No runs yet for this agent.
               </div>
             ) : (
-              runRows.map((run) => (
-                <div
-                  key={run.id}
-                  className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-background p-3"
-                >
-                  <div className="text-xs font-mono text-muted-foreground whitespace-nowrap">
-                    {new Date(run.started_at).toLocaleString()}
-                  </div>
-                  <span className="text-muted-foreground">·</span>
-                  <RunStatusPill status={run.status} />
-                  <span className="text-muted-foreground">·</span>
-                  <div className="flex items-center gap-1.5 text-xs">
-                    <span className="font-mono">
-                      {(run.model_used ?? "—").replace("claude-", "")}
-                    </span>
-                    {run.fallback_used === 1 && (
-                      <span className="rounded-full bg-amber/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber">
-                        fallback
-                      </span>
+              runRows.map((run) => {
+                const failedChecks = (run.runtimeChecks ?? []).filter(
+                  (check) => check.status === "failed",
+                ).length;
+                const passedChecks = (run.runtimeChecks ?? []).filter(
+                  (check) => check.status === "passed",
+                ).length;
+                return (
+                  <div key={run.id} className="rounded-2xl border border-border bg-background p-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="text-xs font-mono text-muted-foreground whitespace-nowrap">
+                        {new Date(run.started_at).toLocaleString()}
+                      </div>
+                      <span className="text-muted-foreground">·</span>
+                      <RunStatusPill status={run.status} />
+                      <span className="text-muted-foreground">·</span>
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <span className="font-mono">
+                          {(run.model_used ?? "—").replace("claude-", "")}
+                        </span>
+                        {run.fallback_used === 1 && (
+                          <span className="rounded-full bg-amber/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber">
+                            fallback
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-muted-foreground">·</span>
+                      <div className="flex-1 text-sm line-clamp-1">
+                        {run.task_title ?? (
+                          <span className="text-muted-foreground italic">no task</span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => openPrompt(run)}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs hover:bg-muted transition-colors"
+                      >
+                        <Sparkles className="size-3 text-violet" /> View prompt
+                      </button>
+                    </div>
+                    {(run.runtimeChecks ?? []).length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        <span className="rounded-full bg-mint/15 px-2 py-0.5 text-[10px] font-medium text-mint">
+                          {passedChecks} checks passed
+                        </span>
+                        {failedChecks > 0 && (
+                          <span className="rounded-full bg-coral/15 px-2 py-0.5 text-[10px] font-medium text-coral">
+                            {failedChecks} failed
+                          </span>
+                        )}
+                        {(run.runtimeChecks ?? []).map((check) => (
+                          <span
+                            key={check.id}
+                            title={check.summary}
+                            className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground"
+                          >
+                            {check.check_type.replace(/_/g, " ")}
+                          </span>
+                        ))}
+                      </div>
                     )}
                   </div>
-                  <span className="text-muted-foreground">·</span>
-                  <div className="flex-1 text-sm line-clamp-1">
-                    {run.task_title ?? (
-                      <span className="text-muted-foreground italic">no task</span>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => openPrompt(run)}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs hover:bg-muted transition-colors"
-                  >
-                    <Sparkles className="size-3 text-violet" /> View prompt
-                  </button>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

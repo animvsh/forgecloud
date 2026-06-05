@@ -50,9 +50,17 @@ export function findOrCreateBranchByName(
 
 export function mergeBranch(branchId: string): Branch | undefined {
   const db = getDb();
-  db.prepare(
-    `UPDATE branches SET status = 'merged', merged_at = ? WHERE id = ?`,
-  ).run(Date.now(), branchId);
+  // Idempotent: re-merging an already-merged branch must not create duplicate
+  // "Merged ... into ..." commits. The caller (handleMergeBranch) is responsible
+  // for recording the merge commit + notification, so returning the existing
+  // row here is enough for the API to be a no-op.
+  const existing = getBranch(branchId);
+  if (!existing) return undefined;
+  if (existing.status === "merged") return existing;
+  db.prepare(`UPDATE branches SET status = 'merged', merged_at = ? WHERE id = ?`).run(
+    Date.now(),
+    branchId,
+  );
   return getBranch(branchId);
 }
 
@@ -123,7 +131,14 @@ export function spawnWorktree(opts: {
   const id = `wt-${ids.newPR().slice(3)}`;
   db.prepare(
     `INSERT INTO worktrees (id, project_id, branch_id, name, status, assigned_agent_id, preview_url) VALUES (?, ?, ?, ?, 'active', ?, ?)`,
-  ).run(id, opts.projectId, opts.branchId, opts.name, opts.assignedAgentId ?? null, opts.previewUrl ?? null);
+  ).run(
+    id,
+    opts.projectId,
+    opts.branchId,
+    opts.name,
+    opts.assignedAgentId ?? null,
+    opts.previewUrl ?? null,
+  );
   return db.prepare("SELECT * FROM worktrees WHERE id = ?").get(id) as Worktree;
 }
 
@@ -179,17 +194,13 @@ export function createNotification(opts: {
 
 export function listNotifications(workspaceId: string, limit = 50): Notification[] {
   return getDb()
-    .prepare(
-      "SELECT * FROM notifications WHERE workspace_id = ? ORDER BY created_at DESC LIMIT ?",
-    )
+    .prepare("SELECT * FROM notifications WHERE workspace_id = ? ORDER BY created_at DESC LIMIT ?")
     .all(workspaceId, limit) as Notification[];
 }
 
 export function unreadCount(workspaceId: string): number {
   const row = getDb()
-    .prepare(
-      "SELECT COUNT(*) AS n FROM notifications WHERE workspace_id = ? AND read_at IS NULL",
-    )
+    .prepare("SELECT COUNT(*) AS n FROM notifications WHERE workspace_id = ? AND read_at IS NULL")
     .get(workspaceId) as { n: number };
   return row.n;
 }
@@ -202,8 +213,6 @@ export function markNotificationRead(notificationId: string): void {
 
 export function markAllRead(workspaceId: string): void {
   getDb()
-    .prepare(
-      "UPDATE notifications SET read_at = ? WHERE workspace_id = ? AND read_at IS NULL",
-    )
+    .prepare("UPDATE notifications SET read_at = ? WHERE workspace_id = ? AND read_at IS NULL")
     .run(Date.now(), workspaceId);
 }

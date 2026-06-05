@@ -1,7 +1,16 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { SiteNav } from "@/components/SiteNav";
 import { HeroDiagram } from "@/components/HeroDiagram";
-import { ArrowRight, Bot, GitBranch, Layout, Loader2, Rocket, ShieldCheck, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  Bot,
+  GitBranch,
+  Layout,
+  Loader2,
+  Rocket,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
 import { useForgeState, useResetProject } from "@/lib/client";
 import { useState } from "react";
 
@@ -11,22 +20,56 @@ export const Route = createFileRoute("/")({
       { title: "ForgeCloud — Turn your team into a software team" },
       {
         name: "description",
-        content: "Describe what you want. AI agents build it. Your team reviews, approves, and ships together.",
+        content:
+          "Describe what you want. AI agents build it. Your team reviews, approves, and ships together.",
       },
       { property: "og:title", content: "ForgeCloud" },
-      { property: "og:description", content: "Build software with AI agents — your team stays in control." },
+      {
+        property: "og:description",
+        content: "Build software with AI agents — your team stays in control.",
+      },
     ],
   }),
   component: Landing,
 });
 
 const features = [
-  { title: "AI software team", color: "var(--violet)", icon: Bot, desc: "Product, Design, Frontend, Backend, QA, DevOps, Auth, Safety, Recovery agents." },
-  { title: "Plain-English pull requests", color: "var(--sky)", icon: GitBranch, desc: "Every change explained like a teammate wrote it. No code jargon." },
-  { title: "Live preview", color: "var(--mint)", icon: Layout, desc: "Click around the app as agents build it. Comment and request edits inline." },
-  { title: "Approval gates", color: "var(--amber)", icon: ShieldCheck, desc: "Risky changes pause for human review. Database edits, deploys, secrets." },
-  { title: "Failure recovery", color: "var(--coral)", icon: ShieldCheck, desc: "When agents fail, they fall back, roll back, or escalate. Never silently broken." },
-  { title: "One-click deploy", color: "var(--violet)", icon: Rocket, desc: "Preview and production deploys with built-in rollback." },
+  {
+    title: "AI software team",
+    color: "var(--violet)",
+    icon: Bot,
+    desc: "Product, Design, Frontend, Backend, QA, DevOps, Auth, Safety, Recovery agents.",
+  },
+  {
+    title: "Plain-English pull requests",
+    color: "var(--sky)",
+    icon: GitBranch,
+    desc: "Every change explained like a teammate wrote it. No code jargon.",
+  },
+  {
+    title: "Live preview",
+    color: "var(--mint)",
+    icon: Layout,
+    desc: "Click around the app as agents build it. Comment and request edits inline.",
+  },
+  {
+    title: "Approval gates",
+    color: "var(--amber)",
+    icon: ShieldCheck,
+    desc: "Risky changes pause for human review. Database edits, deploys, secrets.",
+  },
+  {
+    title: "Failure recovery",
+    color: "var(--coral)",
+    icon: ShieldCheck,
+    desc: "When agents fail, they fall back, roll back, or escalate. Never silently broken.",
+  },
+  {
+    title: "One-click deploy",
+    color: "var(--violet)",
+    icon: Rocket,
+    desc: "Preview and production deploys with built-in rollback.",
+  },
 ];
 
 const testimonials = [
@@ -56,10 +99,12 @@ function Landing() {
               Non-technical teams ship software with AI agents
             </div>
             <h1 className="text-5xl md:text-7xl font-bold leading-[1.05]">
-              Turn your team into<br />a software team.
+              Turn your team into
+              <br />a software team.
             </h1>
             <p className="mx-auto mt-6 max-w-xl text-muted-foreground text-lg">
-              Describe what you want. AI agents build it. Your team reviews, approves, and ships together.
+              Describe what you want. AI agents build it. Your team reviews, approves, and ships
+              together.
             </p>
             <div className="mt-10 flex items-center justify-center gap-3 flex-wrap">
               <Link
@@ -89,16 +134,32 @@ function Landing() {
                     Reset demo
                   </button>
                   {showReset && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 px-4" onClick={() => setShowReset(false)}>
-                      <div className="max-w-md rounded-2xl border border-border bg-card p-6 text-left" onClick={(e) => e.stopPropagation()}>
+                    <div
+                      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 px-4"
+                      onClick={() => setShowReset(false)}
+                    >
+                      <div
+                        className="max-w-md rounded-2xl border border-border bg-card p-6 text-left"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <h3 className="text-lg font-semibold">Reset demo?</h3>
                         <p className="mt-2 text-sm text-muted-foreground">
-                          Wipes all tasks, PRs, agents, deployments, and chat. The demo project will be re-seeded on next visit.
+                          Wipes all tasks, PRs, agents, deployments, and chat. The demo project will
+                          be re-seeded on next visit.
                         </p>
                         <div className="mt-4 flex justify-end gap-2">
-                          <button onClick={() => setShowReset(false)} className="rounded-full border border-border px-4 py-2 text-sm hover:bg-muted">Cancel</button>
                           <button
-                            onClick={async () => { await reset.mutateAsync(); setShowReset(false); navigate({ to: "/app" }); }}
+                            onClick={() => setShowReset(false)}
+                            className="rounded-full border border-border px-4 py-2 text-sm hover:bg-muted"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={async () => {
+                              await reset.mutateAsync();
+                              setShowReset(false);
+                              navigate({ to: "/app" });
+                            }}
                             disabled={reset.isPending}
                             className="inline-flex items-center gap-2 rounded-full bg-coral px-4 py-2 text-sm font-medium text-white hover:brightness-110 disabled:opacity-50"
                           >
@@ -111,14 +172,21 @@ function Landing() {
                   )}
                 </>
               ) : (
-                <Link to="/app" className="rounded-full border border-border bg-card px-6 py-3.5 font-medium hover:bg-muted">
+                <Link
+                  to="/app"
+                  className="rounded-full border border-border bg-card px-6 py-3.5 font-medium hover:bg-muted"
+                >
                   View demo project
                 </Link>
               )}
             </div>
             {data && !data.aiAvailable && (
               <p className="mt-4 text-xs text-muted-foreground">
-                AI in fallback mode. Set <code className="rounded bg-muted px-1.5 py-0.5 text-[10px]">ANTHROPIC_API_KEY</code> for live intelligence.
+                AI in fallback mode. Set{" "}
+                <code className="rounded bg-muted px-1.5 py-0.5 text-[10px]">
+                  ANTHROPIC_API_KEY
+                </code>{" "}
+                for live intelligence.
               </p>
             )}
           </div>
@@ -128,12 +196,20 @@ function Landing() {
           <div className="mx-auto max-w-6xl">
             <div className="mb-12 text-center">
               <p className="text-sm font-medium text-brand">One platform</p>
-              <h2 className="mt-2 text-4xl md:text-5xl font-bold">Everything your team needs to ship.</h2>
+              <h2 className="mt-2 text-4xl md:text-5xl font-bold">
+                Everything your team needs to ship.
+              </h2>
             </div>
             <div className="grid gap-4 md:grid-cols-3">
               {features.map((f) => (
-                <div key={f.title} className="rounded-3xl border border-border bg-card p-7 hover:shadow-lg transition">
-                  <div className="squircle mb-5 flex size-12 items-center justify-center" style={{ background: f.color }}>
+                <div
+                  key={f.title}
+                  className="rounded-3xl border border-border bg-card p-7 hover:shadow-lg transition"
+                >
+                  <div
+                    className="squircle mb-5 flex size-12 items-center justify-center"
+                    style={{ background: f.color }}
+                  >
                     <f.icon className="size-6 text-white" />
                   </div>
                   <h3 className="text-lg font-semibold">{f.title}</h3>
@@ -149,7 +225,9 @@ function Landing() {
             <div className="mb-12 text-center">
               <p className="text-sm font-medium text-brand">Your AI team</p>
               <h2 className="mt-2 text-4xl md:text-5xl font-bold">Nine agents, one product.</h2>
-              <p className="mt-4 text-muted-foreground">Each one has a job, a permission set, and a fallback model.</p>
+              <p className="mt-4 text-muted-foreground">
+                Each one has a job, a permission set, and a fallback model.
+              </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {[
@@ -163,7 +241,10 @@ function Landing() {
                 { name: "Safety Agent", role: "blocks risky changes" },
                 { name: "Recovery Agent", role: "handles failures" },
               ].map((a) => (
-                <div key={a.name} className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4">
+                <div
+                  key={a.name}
+                  className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4"
+                >
                   <div className="flex size-10 items-center justify-center rounded-xl bg-violet/15 text-violet">
                     <Bot className="size-5" />
                   </div>
@@ -203,7 +284,9 @@ function Landing() {
           <div className="mx-auto max-w-4xl">
             <div className="mb-12 text-center">
               <p className="text-sm font-medium text-brand">What teams say</p>
-              <h2 className="mt-2 text-4xl md:text-5xl font-bold">Built for non-technical teams.</h2>
+              <h2 className="mt-2 text-4xl md:text-5xl font-bold">
+                Built for non-technical teams.
+              </h2>
             </div>
             <div className="grid gap-4 md:grid-cols-3">
               {testimonials.map((t) => (
@@ -218,12 +301,20 @@ function Landing() {
         <section className="px-4 pb-24">
           <div className="mx-auto max-w-2xl text-center">
             <h2 className="text-4xl md:text-5xl font-bold">Ready to ship?</h2>
-            <p className="mt-4 text-muted-foreground">Start with one project. Add your team. Watch the agents work.</p>
+            <p className="mt-4 text-muted-foreground">
+              Start with one project. Add your team. Watch the agents work.
+            </p>
             <div className="mt-8 flex items-center justify-center gap-3">
-              <Link to="/app/intake" className="inline-flex items-center gap-2 rounded-full bg-foreground px-6 py-3.5 font-medium text-background hover:opacity-90">
+              <Link
+                to="/app/intake"
+                className="inline-flex items-center gap-2 rounded-full bg-foreground px-6 py-3.5 font-medium text-background hover:opacity-90"
+              >
                 Start building <ArrowRight className="size-4" />
               </Link>
-              <Link to="/app" className="rounded-full border border-border bg-card px-6 py-3.5 font-medium hover:bg-muted">
+              <Link
+                to="/app"
+                className="rounded-full border border-border bg-card px-6 py-3.5 font-medium hover:bg-muted"
+              >
                 View demo project
               </Link>
             </div>

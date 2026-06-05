@@ -3,7 +3,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Switch } from "@/components/ui/switch";
-import { useForgeState, useResetProject } from "@/lib/client";
+import { useClearPreviewComments, useForgeState, useResetProject } from "@/lib/client";
 import {
   AlertTriangle,
   Bot,
@@ -26,6 +26,7 @@ export const Route = createFileRoute("/app/settings")({
 function SettingsScreen() {
   const { data, isLoading } = useForgeState();
   const resetProject = useResetProject();
+  const clearPreviewComments = useClearPreviewComments();
 
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmDangerReset, setConfirmDangerReset] = useState(false);
@@ -44,6 +45,7 @@ function SettingsScreen() {
   }
 
   const project = data.project;
+  const entitlements = data.entitlements;
   const providerName: string = data.providerName ?? "AI";
   const aiAvailable: boolean = !!data.aiAvailable;
   const agents = data.agents ?? [];
@@ -92,6 +94,17 @@ function SettingsScreen() {
       toast.error("Reset failed", { description: (err as Error).message });
     } finally {
       setResetting(false);
+    }
+  }
+
+  async function doClearPreviewComments() {
+    try {
+      const result = await clearPreviewComments.mutateAsync();
+      toast.success("Preview comments cleared", {
+        description: `${result.removed} comment${result.removed === 1 ? "" : "s"} removed.`,
+      });
+    } catch (err) {
+      toast.error("Could not clear comments", { description: (err as Error).message });
     }
   }
 
@@ -152,8 +165,8 @@ function SettingsScreen() {
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
                       This deletes all tasks, PRs, recovery events, deployments, and chat history
-                      for the current project and re-seeds the Pleasure Pizza Ops demo. This cannot be
-                      undone.
+                      for the current project and re-seeds the Pleasure Pizza Ops demo. This cannot
+                      be undone.
                     </p>
                     <div className="mt-3 flex items-center gap-2">
                       <button
@@ -181,6 +194,53 @@ function SettingsScreen() {
               </div>
             )}
           </div>
+        </section>
+
+        {/* Plan */}
+        <section className="rounded-3xl border border-border bg-card p-6 card-hover">
+          <SectionHeader
+            icon={<ShieldAlert className="size-4 text-amber" />}
+            title="Plan & usage"
+            subtitle="Local enforcement for seats, projects, connected tools, tasks, agent runs, and production deploys."
+          />
+          {entitlements ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <UsageField
+                label="Plan"
+                value={String(entitlements.plan).toUpperCase()}
+                detail={`Billing ${entitlements.billingStatus}`}
+              />
+              <UsageField
+                label="Projects"
+                value={`${entitlements.usage.projects}/${formatLimit(entitlements.limits.projects)}`}
+                detail="Workspace projects"
+              />
+              <UsageField
+                label="Human seats"
+                value={`${entitlements.usage.humanMembers}/${formatLimit(entitlements.limits.humanMembers)}`}
+                detail="Non-AI team members"
+              />
+              <UsageField
+                label="Connected tools"
+                value={`${entitlements.usage.connectedTools}/${formatLimit(entitlements.limits.connectedTools)}`}
+                detail="Active integrations"
+              />
+              <UsageField
+                label="Tasks"
+                value={`${entitlements.usage.tasksThisMonth}/${formatLimit(entitlements.limits.tasksPerMonth)}`}
+                detail="Last 30 days"
+              />
+              <UsageField
+                label="Agent runs"
+                value={`${entitlements.usage.agentRunsThisMonth}/${formatLimit(entitlements.limits.agentRunsPerMonth)}`}
+                detail="Last 30 days"
+              />
+            </div>
+          ) : (
+            <div className="mt-4 rounded-2xl border border-dashed border-border bg-background p-5 text-sm text-muted-foreground">
+              Plan data is not available.
+            </div>
+          )}
         </section>
 
         {/* Intelligence */}
@@ -404,14 +464,16 @@ function SettingsScreen() {
                 Remove every inline comment left on the preview page.
               </p>
               <button
-                onClick={() =>
-                  toast("Coming soon", {
-                    description: "Bulk-clearing preview comments isn't wired up yet.",
-                  })
-                }
+                onClick={doClearPreviewComments}
+                disabled={clearPreviewComments.isPending}
                 className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-coral/40 bg-coral/10 px-3 py-1.5 text-xs font-semibold text-coral hover:bg-coral/20"
               >
-                <Trash2 className="size-3" /> Clear preview comments
+                {clearPreviewComments.isPending ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <Trash2 className="size-3" />
+                )}
+                Clear preview comments
               </button>
             </div>
           </div>
@@ -455,6 +517,20 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <div className="mt-1.5">{children}</div>
     </div>
   );
+}
+
+function UsageField({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <div className="rounded-2xl border border-border bg-background p-4">
+      <div className="text-xs font-medium uppercase text-muted-foreground">{label}</div>
+      <div className="mt-2 text-lg font-semibold">{value}</div>
+      <div className="mt-1 text-xs text-muted-foreground">{detail}</div>
+    </div>
+  );
+}
+
+function formatLimit(limit: number | null | undefined) {
+  return limit == null ? "unlimited" : String(limit);
 }
 
 function ProjectStatusPill({ status }: { status: string }) {

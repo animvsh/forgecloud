@@ -14,11 +14,20 @@ export type RateLimitConfig = {
   refillPerMs: number;
 };
 
-export function consume(key: string, cfg: RateLimitConfig): { allowed: boolean; retryAfterMs: number } {
+export function consume(
+  key: string,
+  cfg: RateLimitConfig,
+): { allowed: boolean; retryAfterMs: number } {
   const now = Date.now();
   const existing = BUCKETS.get(key);
   const bucket: Bucket = existing
-    ? { tokens: Math.min(cfg.capacity, existing.tokens + (now - existing.updatedAt) * cfg.refillPerMs), updatedAt: now }
+    ? {
+        tokens: Math.min(
+          cfg.capacity,
+          existing.tokens + (now - existing.updatedAt) * cfg.refillPerMs,
+        ),
+        updatedAt: now,
+      }
     : { tokens: cfg.capacity, updatedAt: now };
 
   if (bucket.tokens >= 1) {
@@ -41,10 +50,16 @@ export const RATE_CONFIGS = {
   cheap: { capacity: 30, refillPerMs: 120 / 60_000 } satisfies RateLimitConfig,
 };
 
-export function clientKey(req: { headers: Record<string, string | string[] | undefined>; socket?: { remoteAddress?: string } }, route: string): string {
+export function clientKey(
+  req: {
+    headers: Record<string, string | string[] | undefined>;
+    socket?: { remoteAddress?: string };
+  },
+  route: string,
+): string {
   const fwd = req.headers["x-forwarded-for"];
   const ip =
-    (Array.isArray(fwd) ? fwd[0] : (typeof fwd === "string" ? fwd.split(",")[0] : undefined)) ??
+    (Array.isArray(fwd) ? fwd[0] : typeof fwd === "string" ? fwd.split(",")[0] : undefined) ??
     req.socket?.remoteAddress ??
     "unknown";
   return `${ip}:${route}`;

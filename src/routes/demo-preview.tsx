@@ -323,366 +323,379 @@ function PleasurePizzaOpsApp() {
       <main className="mx-auto max-w-6xl space-y-6 px-6 py-6">
         {/* Today hero — Dashboard only */}
         {activeTab === 0 && (
-        <section data-pretty-name="Today hero section">
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-bold tracking-tight" data-pretty-name="Today heading">
-                Today &mdash; Monday, June 2
-              </h1>
-              <p className="text-xs text-muted-foreground">Live numbers from the register</p>
+          <section data-pretty-name="Today hero section">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h1 className="text-xl font-bold tracking-tight" data-pretty-name="Today heading">
+                  Today &mdash; Monday, June 2
+                </h1>
+                <p className="text-xs text-muted-foreground">Live numbers from the register</p>
+              </div>
+              <div
+                className="inline-flex items-center gap-1.5 rounded-full border border-mint/40 bg-mint/10 px-2.5 py-1 text-[11px] text-foreground"
+                data-pretty-name="Open status pill"
+              >
+                <div className="size-1.5 rounded-full bg-mint" />
+                <span>Open · 11am – 11pm</span>
+              </div>
             </div>
-            <div
-              className="inline-flex items-center gap-1.5 rounded-full border border-mint/40 bg-mint/10 px-2.5 py-1 text-[11px] text-foreground"
-              data-pretty-name="Open status pill"
-            >
-              <div className="size-1.5 rounded-full bg-mint" />
-              <span>Open · 11am – 11pm</span>
-            </div>
-          </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            {METRICS.map((m) => (
-              <MetricCard key={m.label} metric={m} />
-            ))}
-          </div>
-        </section>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+              {METRICS.map((m) => (
+                <MetricCard key={m.label} metric={m} />
+              ))}
+            </div>
+          </section>
         )}
 
         {/* Sales by hour — Dashboard only */}
         {activeTab === 0 && (
-        <section
-          className="rounded-3xl border border-border bg-card p-5"
-          data-pretty-name="Sales by hour card"
-        >
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-semibold" data-pretty-name="Sales by hour heading">
-                Sales by hour
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                Lunch lull between 2 PM and 4 PM &mdash; opportunity for a winback promo.
-              </p>
+          <section
+            className="rounded-3xl border border-border bg-card p-5"
+            data-pretty-name="Sales by hour card"
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold" data-pretty-name="Sales by hour heading">
+                  Sales by hour
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Lunch lull between 2 PM and 4 PM &mdash; opportunity for a winback promo.
+                </p>
+              </div>
+              <div className="hidden items-center gap-2 text-[11px] text-muted-foreground sm:flex">
+                <span className="inline-block size-2 rounded-full bg-brand" />
+                Revenue ($)
+              </div>
             </div>
-            <div className="hidden items-center gap-2 text-[11px] text-muted-foreground sm:flex">
-              <span className="inline-block size-2 rounded-full bg-brand" />
-              Revenue ($)
-            </div>
-          </div>
 
-          <div className="relative h-40 w-full" data-pretty-name="Sales chart">
-            <svg
-              viewBox="0 0 480 160"
-              preserveAspectRatio="none"
-              className="h-full w-full"
-              aria-hidden="true"
-            >
-              {/* gridlines */}
-              {[0, 1, 2, 3].map((g) => (
-                <line
-                  key={g}
-                  x1="0"
-                  x2="480"
-                  y1={40 * g + 10}
-                  y2={40 * g + 10}
-                  stroke="currentColor"
-                  className="text-border"
-                  strokeDasharray="2 4"
-                  strokeWidth="0.5"
-                />
+            <div className="relative h-40 w-full" data-pretty-name="Sales chart">
+              <svg
+                viewBox="0 0 480 160"
+                preserveAspectRatio="none"
+                className="h-full w-full"
+                aria-hidden="true"
+              >
+                {/* gridlines */}
+                {[0, 1, 2, 3].map((g) => (
+                  <line
+                    key={g}
+                    x1="0"
+                    x2="480"
+                    y1={40 * g + 10}
+                    y2={40 * g + 10}
+                    stroke="currentColor"
+                    className="text-border"
+                    strokeDasharray="2 4"
+                    strokeWidth="0.5"
+                  />
+                ))}
+                {SALES_BY_HOUR.map((d, i) => {
+                  const barWidth = 480 / SALES_BY_HOUR.length;
+                  const x = i * barWidth + 4;
+                  const h = (d.value / maxSale) * 130;
+                  const y = 140 - h;
+                  const isDip = d.value < 80;
+                  return (
+                    <g key={d.hour}>
+                      <rect
+                        x={x}
+                        y={y}
+                        width={barWidth - 8}
+                        height={h}
+                        rx="4"
+                        className={isDip ? "fill-amber/70" : "fill-brand/80"}
+                      />
+                    </g>
+                  );
+                })}
+              </svg>
+            </div>
+            <div className="mt-2 flex justify-between text-[10px] text-muted-foreground">
+              {SALES_BY_HOUR.map((d) => (
+                <span key={d.hour} className="w-8 text-center">
+                  {d.hour}
+                </span>
               ))}
-              {SALES_BY_HOUR.map((d, i) => {
-                const barWidth = 480 / SALES_BY_HOUR.length;
-                const x = i * barWidth + 4;
-                const h = (d.value / maxSale) * 130;
-                const y = 140 - h;
-                const isDip = d.value < 80;
-                return (
-                  <g key={d.hour}>
-                    <rect
-                      x={x}
-                      y={y}
-                      width={barWidth - 8}
-                      height={h}
-                      rx="4"
-                      className={isDip ? "fill-amber/70" : "fill-brand/80"}
-                    />
-                  </g>
-                );
-              })}
-            </svg>
-          </div>
-          <div className="mt-2 flex justify-between text-[10px] text-muted-foreground">
-            {SALES_BY_HOUR.map((d) => (
-              <span key={d.hour} className="w-8 text-center">
-                {d.hour}
-              </span>
-            ))}
-          </div>
-        </section>
+            </div>
+          </section>
         )}
 
         {/* Customer + Complaints — Dashboard, Customers, Complaints tabs */}
         {(activeTab === 0 || activeTab === 1 || activeTab === 4) && (
-        <div className="grid gap-6 lg:grid-cols-3">
-          {/* Customer winback table */}
-          {(activeTab === 0 || activeTab === 1) && (
-          <section
-            className="rounded-3xl border border-border bg-card p-5 lg:col-span-2"
-            data-pretty-name="Customer winback card"
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold" data-pretty-name="Customer winback heading">
-                  Customer winback
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  Customers who haven't ordered in 14+ days.
-                </p>
-              </div>
-              <button
-                onClick={swallow}
-                data-pretty-name="View all customers button"
-                className="rounded-full border border-border bg-background px-3 py-1 text-[11px] text-muted-foreground hover:bg-muted"
+          <div className="grid gap-6 lg:grid-cols-3">
+            {/* Customer winback table */}
+            {(activeTab === 0 || activeTab === 1) && (
+              <section
+                className="rounded-3xl border border-border bg-card p-5 lg:col-span-2"
+                data-pretty-name="Customer winback card"
               >
-                View all
-              </button>
-            </div>
-
-            <div className="overflow-hidden rounded-2xl border border-border">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/60 text-left text-[11px] uppercase tracking-wider text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-2 font-medium">Customer</th>
-                    <th className="px-4 py-2 font-medium">Last order</th>
-                    <th className="px-4 py-2 font-medium">Favorite item</th>
-                    <th className="px-4 py-2 font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {WINBACK.map((c) => (
-                    <tr
-                      key={c.name}
-                      className="bg-background hover:bg-muted/40"
-                      data-pretty-name={`Winback row: ${c.name}`}
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <h2
+                      className="text-sm font-semibold"
+                      data-pretty-name="Customer winback heading"
                     >
-                      <td className="px-4 py-2.5 font-medium">{c.name}</td>
-                      <td className="px-4 py-2.5 text-muted-foreground">{c.last}</td>
-                      <td className="px-4 py-2.5 text-muted-foreground">{c.fave}</td>
-                      <td className="px-4 py-2.5">
-                        <WinbackPill status={c.status} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-          )}
-
-          {/* Recent complaints */}
-          {(activeTab === 0 || activeTab === 4) && (
-          <section
-            className="rounded-3xl border border-border bg-card p-5"
-            data-pretty-name="Recent complaints card"
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <MessageSquareWarning className="size-4 text-coral" />
-                <h2 className="text-sm font-semibold" data-pretty-name="Recent complaints heading">
-                  Recent complaints
-                </h2>
-              </div>
-              <span className="text-[11px] text-muted-foreground">Last 24h</span>
-            </div>
-            <ul className="space-y-2">
-              {COMPLAINTS.map((c, i) => (
-                <li
-                  key={i}
-                  className="rounded-xl border border-border bg-background p-3 text-xs"
-                  data-pretty-name={`Complaint: ${c.text.slice(0, 30)}`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="text-foreground/90">{c.text}</span>
-                    <StatusPill label={c.status} />
+                      Customer winback
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                      Customers who haven't ordered in 14+ days.
+                    </p>
                   </div>
-                </li>
-              ))}
-            </ul>
-          </section>
-          )}
-        </div>
+                  <button
+                    onClick={swallow}
+                    data-pretty-name="View all customers button"
+                    className="rounded-full border border-border bg-background px-3 py-1 text-[11px] text-muted-foreground hover:bg-muted"
+                  >
+                    View all
+                  </button>
+                </div>
+
+                <div className="overflow-hidden rounded-2xl border border-border">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/60 text-left text-[11px] uppercase tracking-wider text-muted-foreground">
+                      <tr>
+                        <th className="px-4 py-2 font-medium">Customer</th>
+                        <th className="px-4 py-2 font-medium">Last order</th>
+                        <th className="px-4 py-2 font-medium">Favorite item</th>
+                        <th className="px-4 py-2 font-medium">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {WINBACK.map((c) => (
+                        <tr
+                          key={c.name}
+                          className="bg-background hover:bg-muted/40"
+                          data-pretty-name={`Winback row: ${c.name}`}
+                        >
+                          <td className="px-4 py-2.5 font-medium">{c.name}</td>
+                          <td className="px-4 py-2.5 text-muted-foreground">{c.last}</td>
+                          <td className="px-4 py-2.5 text-muted-foreground">{c.fave}</td>
+                          <td className="px-4 py-2.5">
+                            <WinbackPill status={c.status} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+
+            {/* Recent complaints */}
+            {(activeTab === 0 || activeTab === 4) && (
+              <section
+                className="rounded-3xl border border-border bg-card p-5"
+                data-pretty-name="Recent complaints card"
+              >
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <MessageSquareWarning className="size-4 text-coral" />
+                    <h2
+                      className="text-sm font-semibold"
+                      data-pretty-name="Recent complaints heading"
+                    >
+                      Recent complaints
+                    </h2>
+                  </div>
+                  <span className="text-[11px] text-muted-foreground">Last 24h</span>
+                </div>
+                <ul className="space-y-2">
+                  {COMPLAINTS.map((c, i) => (
+                    <li
+                      key={i}
+                      className="rounded-xl border border-border bg-background p-3 text-xs"
+                      data-pretty-name={`Complaint: ${c.text.slice(0, 30)}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-foreground/90">{c.text}</span>
+                        <StatusPill label={c.status} />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </div>
         )}
 
         {/* Promo builder — Dashboard, Promos tabs */}
         {(activeTab === 0 || activeTab === 2) && (
-        <section
-          className="rounded-3xl border border-border bg-card p-5"
-          data-pretty-name="Promo builder card"
-        >
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Sparkles className="size-4 text-violet" />
-              <h2 className="text-sm font-semibold" data-pretty-name="Promo builder heading">
-                Promo builder &mdash; Slow Lunch Winback
-              </h2>
+          <section
+            className="rounded-3xl border border-border bg-card p-5"
+            data-pretty-name="Promo builder card"
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="size-4 text-violet" />
+                <h2 className="text-sm font-semibold" data-pretty-name="Promo builder heading">
+                  Promo builder &mdash; Slow Lunch Winback
+                </h2>
+              </div>
+              <span
+                className="rounded-full bg-violet/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-violet"
+                data-pretty-name="Promo draft pill"
+              >
+                Draft
+              </span>
             </div>
-            <span
-              className="rounded-full bg-violet/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-violet"
-              data-pretty-name="Promo draft pill"
-            >
-              Draft
-            </span>
-          </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <PromoField
-              label="Campaign"
-              value="Slow Lunch Winback"
-              pretty="Promo field: Campaign"
-            />
-            <PromoField label="Target" value="38 lapsed customers" pretty="Promo field: Target" />
-            <PromoField label="Offer" value="20% off any large pizza" pretty="Promo field: Offer" />
-            <PromoField
-              label="Time window"
-              value="Tue–Thu · 2 PM – 4 PM"
-              pretty="Promo field: Time window"
-            />
-            <PromoField
-              label="Estimated revenue"
-              value="$420 – $680"
-              tint="mint"
-              pretty="Promo field: Estimated revenue"
-            />
-            <PromoField
-              label="Estimated cost"
-              value="$84 in discounts"
-              tint="amber"
-              pretty="Promo field: Estimated cost"
-            />
-            <PromoField
-              label="Risk"
-              value="Low · text channel only"
-              tint="mint"
-              pretty="Promo field: Risk"
-            />
-            <PromoField
-              label="Approval"
-              value="Owner sign-off required"
-              tint="coral"
-              pretty="Promo field: Approval"
-            />
-          </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <PromoField
+                label="Campaign"
+                value="Slow Lunch Winback"
+                pretty="Promo field: Campaign"
+              />
+              <PromoField label="Target" value="38 lapsed customers" pretty="Promo field: Target" />
+              <PromoField
+                label="Offer"
+                value="20% off any large pizza"
+                pretty="Promo field: Offer"
+              />
+              <PromoField
+                label="Time window"
+                value="Tue–Thu · 2 PM – 4 PM"
+                pretty="Promo field: Time window"
+              />
+              <PromoField
+                label="Estimated revenue"
+                value="$420 – $680"
+                tint="mint"
+                pretty="Promo field: Estimated revenue"
+              />
+              <PromoField
+                label="Estimated cost"
+                value="$84 in discounts"
+                tint="amber"
+                pretty="Promo field: Estimated cost"
+              />
+              <PromoField
+                label="Risk"
+                value="Low · text channel only"
+                tint="mint"
+                pretty="Promo field: Risk"
+              />
+              <PromoField
+                label="Approval"
+                value="Owner sign-off required"
+                tint="coral"
+                pretty="Promo field: Approval"
+              />
+            </div>
 
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-muted-foreground">
-              Sends as SMS through the existing texting integration. Customers can opt out with
-              STOP.
-            </p>
-            <button
-              onClick={swallow}
-              data-pretty-name="Send promo button"
-              className="inline-flex items-center gap-1.5 rounded-full bg-coral px-4 py-2 text-xs font-semibold text-white shadow-sm hover:brightness-110"
-            >
-              <Send className="size-3.5" />
-              Send promo (owner approval needed)
-            </button>
-          </div>
-        </section>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                Sends as SMS through the existing texting integration. Customers can opt out with
+                STOP.
+              </p>
+              <button
+                onClick={swallow}
+                data-pretty-name="Send promo button"
+                className="inline-flex items-center gap-1.5 rounded-full bg-coral px-4 py-2 text-xs font-semibold text-white shadow-sm hover:brightness-110"
+              >
+                <Send className="size-3.5" />
+                Send promo (owner approval needed)
+              </button>
+            </div>
+          </section>
         )}
 
         {/* Staff + Catering — Dashboard, Staff, Catering tabs */}
         {(activeTab === 0 || activeTab === 3 || activeTab === 5) && (
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* Staff tasks */}
-          {(activeTab === 0 || activeTab === 3) && (
-          <section
-            className="rounded-3xl border border-border bg-card p-5"
-            data-pretty-name="Staff tasks card"
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Users className="size-4 text-sky" />
-                <h2 className="text-sm font-semibold" data-pretty-name="Staff tasks heading">
-                  Staff tasks
-                </h2>
-              </div>
-              <button
-                onClick={swallow}
-                data-pretty-name="Add staff task button"
-                className="rounded-full border border-border bg-background px-3 py-1 text-[11px] text-muted-foreground hover:bg-muted"
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Staff tasks */}
+            {(activeTab === 0 || activeTab === 3) && (
+              <section
+                className="rounded-3xl border border-border bg-card p-5"
+                data-pretty-name="Staff tasks card"
               >
-                + Add task
-              </button>
-            </div>
-            <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border">
-              {STAFF_TASKS.map((t) => (
-                <li
-                  key={t.title}
-                  className="flex items-center justify-between gap-3 bg-background px-4 py-3 text-sm"
-                  data-pretty-name={`Staff task: ${t.title}`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="size-6 shrink-0 rounded-full bg-muted text-center text-[10px] font-semibold leading-6 text-muted-foreground">
-                      {t.owner.charAt(0)}
-                    </div>
-                    <div>
-                      <div className="font-medium">{t.title}</div>
-                      <div className="text-[11px] text-muted-foreground">{t.owner}</div>
-                    </div>
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Users className="size-4 text-sky" />
+                    <h2 className="text-sm font-semibold" data-pretty-name="Staff tasks heading">
+                      Staff tasks
+                    </h2>
                   </div>
-                  <StatusPill label={t.status} />
-                </li>
-              ))}
-            </ul>
-          </section>
-          )}
+                  <button
+                    onClick={swallow}
+                    data-pretty-name="Add staff task button"
+                    className="rounded-full border border-border bg-background px-3 py-1 text-[11px] text-muted-foreground hover:bg-muted"
+                  >
+                    + Add task
+                  </button>
+                </div>
+                <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border">
+                  {STAFF_TASKS.map((t) => (
+                    <li
+                      key={t.title}
+                      className="flex items-center justify-between gap-3 bg-background px-4 py-3 text-sm"
+                      data-pretty-name={`Staff task: ${t.title}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="size-6 shrink-0 rounded-full bg-muted text-center text-[10px] font-semibold leading-6 text-muted-foreground">
+                          {t.owner.charAt(0)}
+                        </div>
+                        <div>
+                          <div className="font-medium">{t.title}</div>
+                          <div className="text-[11px] text-muted-foreground">{t.owner}</div>
+                        </div>
+                      </div>
+                      <StatusPill label={t.status} />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
 
-          {/* Catering & events */}
-          {(activeTab === 0 || activeTab === 5) && (
-          <section
-            className="rounded-3xl border border-border bg-card p-5"
-            data-pretty-name="Catering events card"
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Calendar className="size-4 text-amber" />
-                <h2 className="text-sm font-semibold" data-pretty-name="Catering events heading">
-                  Catering &amp; events
-                </h2>
-              </div>
-              <button
-                onClick={swallow}
-                data-pretty-name="Catering view all button"
-                className="rounded-full border border-border bg-background px-3 py-1 text-[11px] text-muted-foreground hover:bg-muted"
+            {/* Catering & events */}
+            {(activeTab === 0 || activeTab === 5) && (
+              <section
+                className="rounded-3xl border border-border bg-card p-5"
+                data-pretty-name="Catering events card"
               >
-                View calendar
-              </button>
-            </div>
-            <ul className="space-y-2">
-              {EVENTS.map((ev) => (
-                <li
-                  key={ev.party}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background px-4 py-3 text-sm"
-                  data-pretty-name={`Event: ${ev.party}`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex size-9 shrink-0 flex-col items-center justify-center rounded-lg bg-amber/15 text-amber">
-                      <span className="text-[9px] font-semibold uppercase">
-                        {ev.date.split(" ")[0]}
-                      </span>
-                      <span className="text-xs font-bold leading-none">
-                        {ev.date.split(" ")[1]}
-                      </span>
-                    </div>
-                    <div className="font-medium">{ev.party}</div>
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="size-4 text-amber" />
+                    <h2
+                      className="text-sm font-semibold"
+                      data-pretty-name="Catering events heading"
+                    >
+                      Catering &amp; events
+                    </h2>
                   </div>
-                  <StatusPill label={ev.status} />
-                </li>
-              ))}
-            </ul>
-          </section>
-          )}
-        </div>
+                  <button
+                    onClick={swallow}
+                    data-pretty-name="Catering view all button"
+                    className="rounded-full border border-border bg-background px-3 py-1 text-[11px] text-muted-foreground hover:bg-muted"
+                  >
+                    View calendar
+                  </button>
+                </div>
+                <ul className="space-y-2">
+                  {EVENTS.map((ev) => (
+                    <li
+                      key={ev.party}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background px-4 py-3 text-sm"
+                      data-pretty-name={`Event: ${ev.party}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex size-9 shrink-0 flex-col items-center justify-center rounded-lg bg-amber/15 text-amber">
+                          <span className="text-[9px] font-semibold uppercase">
+                            {ev.date.split(" ")[0]}
+                          </span>
+                          <span className="text-xs font-bold leading-none">
+                            {ev.date.split(" ")[1]}
+                          </span>
+                        </div>
+                        <div className="font-medium">{ev.party}</div>
+                      </div>
+                      <StatusPill label={ev.status} />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </div>
         )}
       </main>
 

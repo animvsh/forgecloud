@@ -1,20 +1,14 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import {
   MessageSquare,
-  Bot,
   ListChecks,
   Eye,
   GitBranch,
   GitPullRequest,
   ShieldAlert,
-  Rocket,
   Users,
-  FileText,
   Home,
-  Settings,
   Plug2,
-  Search,
-  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { useForgeState } from "@/lib/client";
@@ -73,7 +67,10 @@ export function SiteNav() {
 type NavItem = { to: string; label: string; icon: LucideIcon; key?: string };
 
 // Three sections matching the PRD's "Lovable / GitHub / Linear" mental model.
-// Each section gets a subtle accent on hover so the structure is legible.
+// Trimmed to the 9 surfaces users actually need: the builder funnel, the PR
+// pipeline, and the team/task dashboard. Drill-in detail (agents, deploys,
+// report, settings, etc.) is reachable from those surfaces but not promoted
+// in the nav — see memory/feedback-scope-three-flows.md.
 const sections: { key: "build" | "review" | "track"; tone: string; items: NavItem[] }[] = [
   {
     key: "build",
@@ -81,8 +78,6 @@ const sections: { key: "build" | "review" | "track"; tone: string; items: NavIte
     items: [
       { to: "/app", label: "Home", icon: Home },
       { to: "/app/connect", label: "Connect", icon: Plug2 },
-      { to: "/app/discoveries", label: "Found", icon: Search },
-      { to: "/app/suggested-apps", label: "Apps", icon: Sparkles },
       { to: "/app/chat", label: "Chat", icon: MessageSquare },
       { to: "/app/preview", label: "Preview", icon: Eye },
     ],
@@ -101,11 +96,7 @@ const sections: { key: "build" | "review" | "track"; tone: string; items: NavIte
     tone: "var(--mint)",
     items: [
       { to: "/app/tasks", label: "Tasks", icon: ListChecks },
-      { to: "/app/agents", label: "Agents", icon: Bot },
-      { to: "/app/deployments", label: "Deploys", icon: Rocket },
       { to: "/app/team", label: "Team", icon: Users },
-      { to: "/app/report", label: "Report", icon: FileText },
-      { to: "/app/settings", label: "Settings", icon: Settings },
     ],
   },
 ];
@@ -117,8 +108,8 @@ export function AppNav({ pendingApprovals = 0 }: { pendingApprovals?: number }) 
   const unread = data?.notificationsUnread ?? 0;
 
   return (
-    <header className="sticky top-4 z-50 flex justify-center px-2 sm:px-4">
-      <nav className="pill-nav flex flex-wrap items-center justify-center gap-x-0.5 gap-y-1 px-1.5 sm:px-2 py-2 w-full max-w-6xl">
+    <header className="sticky top-2 z-50 flex justify-center px-2 sm:top-4 sm:px-4">
+      <nav className="pill-nav flex w-full max-w-6xl items-center gap-1 overflow-x-auto px-2 py-2 sm:justify-center">
         <Link to="/" className="flex items-center gap-2 px-2 sm:px-3 py-1.5 font-semibold shrink-0">
           <span className="inline-block size-4 rounded bg-foreground" />
           <span className="hidden sm:inline">ForgeCloud</span>
@@ -126,13 +117,11 @@ export function AppNav({ pendingApprovals = 0 }: { pendingApprovals?: number }) 
         <div className="mx-1 h-5 w-px bg-border shrink-0" />
         <ProjectSwitcher />
         {sections.map((section) => (
-          <div
-            key={section.key}
-            className="flex items-center gap-0.5 shrink-0 max-[420px]:basis-full max-[420px]:justify-center max-[420px]:border-t max-[420px]:border-border max-[420px]:pt-1 max-[420px]:mt-1"
-          >
+          <div key={section.key} className="flex shrink-0 items-center gap-0.5">
             <div className="mx-1 h-5 w-px bg-border shrink-0" />
             {section.items.map((n) => {
-              const active = pathname === n.to || (n.key === "branches" && pathname.startsWith("/app/branches"));
+              const active =
+                pathname === n.to || (n.key === "branches" && pathname.startsWith("/app/branches"));
               const isRecovery = n.label === "Recovery";
               return (
                 <Link

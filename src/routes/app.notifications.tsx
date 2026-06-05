@@ -1,6 +1,10 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Bell, ArrowLeft, Loader2 } from "lucide-react";
-import { useNotifications, useMarkAllNotificationsRead, useMarkNotificationRead } from "@/lib/client";
+import {
+  useNotifications,
+  useMarkAllNotificationsRead,
+  useMarkNotificationRead,
+} from "@/lib/client";
 import { ScreenHeader } from "@/components/ScreenHeader";
 
 export const Route = createFileRoute("/app/notifications")({
@@ -105,9 +109,7 @@ function NotificationsScreen() {
                         </span>
                       </div>
                       <div className="mt-0.5 text-sm font-medium">{n.title}</div>
-                      {n.body && (
-                        <div className="mt-1 text-xs text-muted-foreground">{n.body}</div>
-                      )}
+                      {n.body && <div className="mt-1 text-xs text-muted-foreground">{n.body}</div>}
                       <div className="mt-2 flex items-center gap-2">
                         {n.link && (
                           <button

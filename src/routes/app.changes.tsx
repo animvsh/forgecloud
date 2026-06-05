@@ -48,6 +48,7 @@ type RiskChecks = {
   qa: RiskStatus;
   secretScan: RiskStatus;
   migration: RiskStatus;
+  previewDeploy: RiskStatus;
 };
 
 type PR = {
@@ -65,17 +66,46 @@ type PR = {
   approved_at?: string | null;
   approver_name?: string | null;
   merged_at?: number | null;
+  rolled_back_at?: number | null;
+  rolled_back_by?: string | null;
   requires_approval: number;
   changes?: ChangeRow[];
   riskChecks?: RiskChecks;
+  task_id?: string | null;
+  task_title?: string | null;
+  task_status?: string | null;
+  task_requester_name?: string | null;
+  task_reviewer_name?: string | null;
+  agent_owner_name?: string | null;
+  agent_owner_role?: string | null;
+  latest_deployment_environment?: string | null;
+  latest_deployment_status?: string | null;
+  latest_deployment_url?: string | null;
 };
 
 type Approval = {
   id: string;
+  pr_id?: string | null;
   risk_level: string;
   reason: string;
   details: string;
 };
+
+type Deployment = {
+  pr_id?: string | null;
+  status: string;
+  created_at: number;
+};
+
+type PrTab = "open" | "merged" | "failed" | "rolled_back" | "needs_approval";
+
+const PR_TABS: Array<{ key: PrTab; label: string }> = [
+  { key: "open", label: "Open" },
+  { key: "merged", label: "Merged" },
+  { key: "failed", label: "Failed" },
+  { key: "rolled_back", label: "Rolled back" },
+  { key: "needs_approval", label: "Needs approval" },
+];
 
 function ChangesScreen() {
   const { data, isLoading } = useForgeState();
@@ -92,6 +122,7 @@ function ChangesScreen() {
   const [expandedDiffs, setExpandedDiffs] = useState<Record<string, boolean>>({});
   const [editsDraft, setEditsDraft] = useState<Record<string, string>>({});
   const [editsBusyId, setEditsBusyId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<PrTab>("open");
 
   const [explainOpen, setExplainOpen] = useState(false);
   const [explainTitle, setExplainTitle] = useState<string>("");
@@ -109,6 +140,36 @@ function ChangesScreen() {
 
   const prs: PR[] = data.prs ?? [];
   const approvals: Approval[] = data.approvals ?? [];
+  const deployments: Deployment[] = data.deployments ?? [];
+  const pendingApprovalPrIds = new Set(
+    approvals.map((a) => a.pr_id).filter((id): id is string => Boolean(id)),
+  );
+  const latestDeploymentByPrId = new Map<string, Deployment>();
+  for (const deployment of deployments) {
+    if (!deployment.pr_id) continue;
+    const prev = latestDeploymentByPrId.get(deployment.pr_id);
+    if (!prev || deployment.created_at > prev.created_at) {
+      latestDeploymentByPrId.set(deployment.pr_id, deployment);
+    }
+  }
+  const getPrBucket = (pr: PR): PrTab => {
+    if (pendingApprovalPrIds.has(pr.id)) return "needs_approval";
+    if (pr.status === "rolled_back") return "rolled_back";
+    if (pr.status === "blocked" || pr.status === "rejected") return "failed";
+    if (latestDeploymentByPrId.get(pr.id)?.status === "failed") return "failed";
+    if (pr.status === "merged" || (pr.status === "approved" && Boolean(pr.merged_at))) {
+      return "merged";
+    }
+    return "open";
+  };
+  const filteredPrs = prs.filter((p) => getPrBucket(p) === activeTab);
+  const tabCounts = PR_TABS.reduce(
+    (acc, tab) => {
+      acc[tab.key] = prs.filter((p) => getPrBucket(p) === tab.key).length;
+      return acc;
+    },
+    {} as Record<PrTab, number>,
+  );
 
   async function approve(prId: string) {
     setBusy(prId);
@@ -276,7 +337,7 @@ function ChangesScreen() {
             <div className="flex items-center justify-between">
               <div className="text-sm font-medium text-muted-foreground">Version log</div>
               <div className="text-xs text-muted-foreground">
-                {prs.filter((p) => p.status === "approved").length} shipped · {prs.length} total
+                {prs.filter((p) => getPrBucket(p) === "merged").length} shipped · {prs.length} total
               </div>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
@@ -284,7 +345,7 @@ function ChangesScreen() {
                 .sort((a, b) => a.number - b.number)
                 .map((p, idx, arr) => {
                   const isLast = idx === arr.length - 1;
-                  const shipped = p.status === "approved";
+                  const shipped = getPrBucket(p) === "merged";
                   return (
                     <div key={p.id} className="flex items-center gap-1.5">
                       <div
@@ -311,16 +372,58 @@ function ChangesScreen() {
         )}
 
         <div className="space-y-3">
-          <h2 className="text-lg font-semibold">All changes</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold">Changes</h2>
+            <div className="inline-flex flex-wrap gap-1 rounded-2xl border border-border bg-card p-1">
+              {PR_TABS.map((tab) => {
+                const active = activeTab === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setActiveTab(tab.key)}
+                    className={
+                      "inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition " +
+                      (active
+                        ? "bg-foreground text-background shadow-sm"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground")
+                    }
+                  >
+                    {tab.label}
+                    <span
+                      className={
+                        "rounded-full px-1.5 py-0.5 text-[10px] " +
+                        (active ? "bg-background/20" : "bg-muted")
+                      }
+                    >
+                      {tabCounts[tab.key] ?? 0}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           {prs.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border bg-card p-8 text-center text-sm text-muted-foreground">
               No changes yet. Agents create PRs as they build features.
             </div>
+          ) : filteredPrs.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-border bg-card p-8 text-center text-sm text-muted-foreground">
+              No PRs in this view.
+            </div>
           ) : (
-            prs.map((p) => {
+            filteredPrs.map((p) => {
               const changes = p.changes ?? [];
               const expanded = !!expandedChanges[p.id];
               const isRollbackTarget = confirmRollbackId === p.id;
+              const hasPendingApproval = pendingApprovalPrIds.has(p.id);
+              const canApprove =
+                p.status === "open" && p.requires_approval === 0 && !hasPendingApproval;
+              const canRequestEdits =
+                (p.status === "open" || p.status === "changes_requested") && !hasPendingApproval;
+              const canRollback =
+                (p.status === "merged" || p.status === "approved" || Boolean(p.merged_at)) &&
+                p.status !== "rolled_back";
               return (
                 <div key={p.id} className="rounded-3xl border border-border bg-card p-6 card-hover">
                   <div className="flex flex-wrap items-center gap-3">
@@ -343,9 +446,80 @@ function ChangesScreen() {
                     )}
                   </div>
 
+                  <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
+                    {p.task_title && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="font-semibold text-foreground/70">Task:</span>
+                        <span className="truncate max-w-[14rem]">{p.task_title}</span>
+                        {p.task_status && (
+                          <span className="rounded bg-muted px-1 py-0.5 text-[9px] uppercase tracking-wide">
+                            {p.task_status}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                    {p.agent_owner_name && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="font-semibold text-foreground/70">Agent:</span>
+                        <span>{p.agent_owner_name}</span>
+                        {p.agent_owner_role && (
+                          <span className="text-muted-foreground/70">· {p.agent_owner_role}</span>
+                        )}
+                      </span>
+                    )}
+                    {p.task_requester_name && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="font-semibold text-foreground/70">Requested by:</span>
+                        <span>{p.task_requester_name}</span>
+                      </span>
+                    )}
+                    {p.task_reviewer_name && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="font-semibold text-foreground/70">Reviewer:</span>
+                        <span>{p.task_reviewer_name}</span>
+                      </span>
+                    )}
+                    {p.latest_deployment_environment && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="font-semibold text-foreground/70">Deployed to:</span>
+                        <span className="rounded bg-mint/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-mint">
+                          {p.latest_deployment_environment}
+                        </span>
+                        <span className="text-mint">{p.latest_deployment_status}</span>
+                      </span>
+                    )}
+                  </div>
+
                   <p className="mt-3 text-sm text-muted-foreground">{p.summary}</p>
 
                   {p.riskChecks && <RiskMatrix checks={p.riskChecks} />}
+
+                  {(p.task_requester_name || p.task_title || p.agent_owner_name) && (
+                    <div className="mt-3 rounded-xl border border-border bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground">
+                      <span className="font-semibold text-foreground/80">Why this changed: </span>
+                      {p.task_requester_name
+                        ? `${p.task_requester_name} requested `
+                        : "Owner requested "}
+                      {p.task_title ? (
+                        <span className="text-foreground/90">“{p.task_title}”</span>
+                      ) : (
+                        "this update"
+                      )}
+                      {p.agent_owner_name ? (
+                        <>
+                          {". "}
+                          {p.agent_owner_name}
+                          {p.agent_owner_role ? ` (${p.agent_owner_role})` : ""} did the build and
+                          {p.task_reviewer_name
+                            ? ` ${p.task_reviewer_name} reviewed it`
+                            : " it self-reviewed"}
+                          {" before shipping."}
+                        </>
+                      ) : (
+                        "."
+                      )}
+                    </div>
+                  )}
 
                   <div className="mt-3 rounded-xl border border-border bg-background p-3 text-xs font-mono text-muted-foreground">
                     {p.files_changed} file{p.files_changed !== 1 ? "s" : ""} changed
@@ -438,9 +612,9 @@ function ChangesScreen() {
                     </div>
                   )}
 
-                  {p.status === "open" && p.requires_approval === 0 && (
-                    <>
-                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {(canApprove || canRollback) && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      {canApprove && (
                         <button
                           onClick={() => approve(p.id)}
                           disabled={busy === p.id}
@@ -451,69 +625,89 @@ function ChangesScreen() {
                           ) : (
                             <Check className="size-3" />
                           )}
-                          Approve
+                          Approve & merge
                         </button>
-                        {p.merged_at ? (
-                          <button
-                            onClick={() => setConfirmRollbackId(p.id)}
-                            disabled={rollingBackId === p.id}
-                            className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors disabled:opacity-40"
-                          >
-                            <Undo2 className="size-3" /> Rollback
-                          </button>
-                        ) : null}
+                      )}
+                      {canRequestEdits && (
                         <button
-                          onClick={() => openExplainForPr(p)}
-                          disabled={explainLoadingFor === p.id}
+                          onClick={() => {
+                            const el = document.getElementById(`edits-${p.id}`);
+                            el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                            const ta = el?.querySelector("textarea");
+                            ta?.focus();
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors"
+                        >
+                          <MessageSquarePlus className="size-3" /> Request changes
+                        </button>
+                      )}
+                      {canRollback && (
+                        <button
+                          onClick={() => setConfirmRollbackId(p.id)}
+                          disabled={rollingBackId === p.id}
                           className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors disabled:opacity-40"
                         >
-                          {explainLoadingFor === p.id ? (
-                            <Loader2 className="size-3 animate-spin" />
-                          ) : (
-                            <Sparkles className="size-3 text-violet" />
-                          )}
-                          Ask AI to explain
+                          <Undo2 className="size-3" /> Rollback
                         </button>
-                      </div>
+                      )}
+                    </div>
+                  )}
 
-                      {isRollbackTarget && (
-                        <div className="mt-3 rounded-xl border border-coral/40 bg-coral/5 p-3">
-                          <div className="flex items-start gap-2">
-                            <AlertTriangle className="mt-0.5 size-4 text-coral" />
-                            <div className="flex-1">
-                              <div className="text-sm font-semibold text-foreground">
-                                Roll back PR #{p.number}?
-                              </div>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                The Recovery Agent will revert this change and log a recovery event.
-                                This cannot be undone from the UI.
-                              </p>
-                              <div className="mt-3 flex items-center gap-2">
-                                <button
-                                  onClick={() => confirmRollback(p.id)}
-                                  disabled={rollingBackId === p.id}
-                                  className="inline-flex items-center gap-1.5 rounded-full bg-coral px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110 disabled:opacity-40"
-                                >
-                                  {rollingBackId === p.id ? (
-                                    <Loader2 className="size-3 animate-spin" />
-                                  ) : (
-                                    <Undo2 className="size-3" />
-                                  )}
-                                  Confirm rollback
-                                </button>
-                                <button
-                                  onClick={() => setConfirmRollbackId(null)}
-                                  disabled={rollingBackId === p.id}
-                                  className="rounded-full border border-border px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-40"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => openExplainForPr(p)}
+                      disabled={explainLoadingFor === p.id}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors disabled:opacity-40"
+                    >
+                      {explainLoadingFor === p.id ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : (
+                        <Sparkles className="size-3 text-violet" />
+                      )}
+                      Ask AI to explain
+                    </button>
+                  </div>
+
+                  {isRollbackTarget && (
+                    <div className="mt-3 rounded-xl border border-coral/40 bg-coral/5 p-3">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="mt-0.5 size-4 text-coral" />
+                        <div className="flex-1">
+                          <div className="text-sm font-semibold text-foreground">
+                            Roll back PR #{p.number}?
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            The Recovery Agent will revert this change and log a recovery event.
+                            This cannot be undone from the UI.
+                          </p>
+                          <div className="mt-3 flex items-center gap-2">
+                            <button
+                              onClick={() => confirmRollback(p.id)}
+                              disabled={rollingBackId === p.id}
+                              className="inline-flex items-center gap-1.5 rounded-full bg-coral px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110 disabled:opacity-40"
+                            >
+                              {rollingBackId === p.id ? (
+                                <Loader2 className="size-3 animate-spin" />
+                              ) : (
+                                <Undo2 className="size-3" />
+                              )}
+                              Confirm rollback
+                            </button>
+                            <button
+                              onClick={() => setConfirmRollbackId(null)}
+                              disabled={rollingBackId === p.id}
+                              className="rounded-full border border-border px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-40"
+                            >
+                              Cancel
+                            </button>
                           </div>
                         </div>
-                      )}
+                      </div>
+                    </div>
+                  )}
 
+                  {canRequestEdits && (
+                    <>
                       <div className="mt-3 rounded-xl border border-border bg-background p-3">
                         <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
                           <MessageSquarePlus className="size-3" /> Request edits
@@ -624,9 +818,11 @@ function StatusPill({ status }: { status: string }) {
   const colors: Record<string, string> = {
     open: "bg-sky/20 text-sky",
     approved: "bg-mint/20 text-mint",
+    merged: "bg-mint/20 text-mint",
+    changes_requested: "bg-amber/20 text-amber",
     rejected: "bg-coral/20 text-coral",
     blocked: "bg-coral/20 text-coral",
-    reverted: "bg-muted text-muted-foreground",
+    rolled_back: "bg-muted text-muted-foreground",
   };
   return (
     <span
@@ -643,9 +839,10 @@ function RiskMatrix({ checks }: { checks: RiskChecks }) {
     { key: "qa", label: "QA" },
     { key: "secretScan", label: "Secrets" },
     { key: "migration", label: "Migration" },
+    { key: "previewDeploy", label: "Preview" },
   ];
   return (
-    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
       {items.map((it) => (
         <RiskCell key={it.key} label={it.label} status={checks[it.key]} />
       ))}

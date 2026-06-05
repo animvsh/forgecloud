@@ -1,6 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ScreenHeader } from "@/components/ScreenHeader";
-import { ShieldCheck, Loader2, AlertTriangle, RefreshCcw, Undo2, KeyRound, Database, Wifi, AlertOctagon, Sparkles } from "lucide-react";
+import {
+  ShieldCheck,
+  Loader2,
+  AlertTriangle,
+  RefreshCcw,
+  Undo2,
+  KeyRound,
+  Database,
+  Wifi,
+  AlertOctagon,
+  Sparkles,
+} from "lucide-react";
 import { useForgeState, useInjectFailure } from "@/lib/client";
 import { useState } from "react";
 
@@ -67,7 +78,9 @@ function FailuresScreen() {
         action={
           <div className="flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs">
             <ShieldCheck className="size-4 text-brand" />
-            {recovered.length > 0 || blocked.length > 0 ? `${recovered.length} recovered · ${blocked.length} blocked` : "All systems healthy"}
+            {recovered.length > 0 || blocked.length > 0
+              ? `${recovered.length} recovered · ${blocked.length} blocked`
+              : "All systems healthy"}
           </div>
         }
       />
@@ -79,7 +92,8 @@ function FailuresScreen() {
             <h3 className="font-semibold">Try a failure</h3>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            These are the exact failure types the TrueFoundry stack protects against. Click one — ForgeCloud will detect, recover, and log it here.
+            These are the exact failure types the TrueFoundry stack protects against. Click one —
+            ForgeCloud will detect, recover, and log it here.
           </p>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 md:grid-cols-4">
             {[
@@ -98,7 +112,11 @@ function FailuresScreen() {
                 disabled={busy !== null}
                 className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-40"
               >
-                {busy === f.type ? <Loader2 className="mr-1 inline size-3 animate-spin" /> : <AlertTriangle className="mr-1 inline size-3 text-amber" />}
+                {busy === f.type ? (
+                  <Loader2 className="mr-1 inline size-3 animate-spin" />
+                ) : (
+                  <AlertTriangle className="mr-1 inline size-3 text-amber" />
+                )}
                 {f.label}
               </button>
             ))}
@@ -116,10 +134,15 @@ function FailuresScreen() {
             </p>
             <div className="mt-3 space-y-2">
               {pending.map((a) => (
-                <div key={a.id} className="rounded-xl border border-amber/40 bg-background p-3 text-sm">
+                <div
+                  key={a.id}
+                  className="rounded-xl border border-amber/40 bg-background p-3 text-sm"
+                >
                   <div className="font-medium">{a.reason}</div>
                   <div className="mt-1 text-xs text-muted-foreground">{a.details}</div>
-                  <div className="mt-2 text-[10px] uppercase tracking-wider text-amber">In approval queue → /app/changes</div>
+                  <div className="mt-2 text-[10px] uppercase tracking-wider text-amber">
+                    In approval queue → /app/changes
+                  </div>
                 </div>
               ))}
             </div>
@@ -133,7 +156,8 @@ function FailuresScreen() {
               <Sparkles className="mx-auto size-8 text-mint" />
               <p className="mt-3 font-semibold">No failures yet</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Click a button above to simulate a failure. The AI team will detect it, recover, and log it here.
+                Click a button above to simulate a failure. The AI team will detect it, recover, and
+                log it here.
               </p>
             </div>
           ) : (
@@ -142,7 +166,10 @@ function FailuresScreen() {
                 const Icon = ICONS[e.failure_type] ?? AlertTriangle;
                 const color = COLORS[e.failure_type] ?? "var(--amber)";
                 return (
-                  <div key={e.id} className="rounded-2xl border border-border bg-card p-5 card-hover">
+                  <div
+                    key={e.id}
+                    className="rounded-2xl border border-border bg-card p-5 card-hover"
+                  >
                     <div className="flex items-center gap-3">
                       <div
                         className="flex size-10 items-center justify-center squircle"
@@ -151,7 +178,9 @@ function FailuresScreen() {
                         <Icon className="size-5 text-white" />
                       </div>
                       <div className="flex-1">
-                        <div className="font-semibold capitalize">{e.failure_type.replace(/_/g, " ")}</div>
+                        <div className="font-semibold capitalize">
+                          {e.failure_type.replace(/_/g, " ")}
+                        </div>
                         <div className="text-xs text-muted-foreground">
                           {new Date(e.created_at).toLocaleTimeString()}
                         </div>
@@ -166,7 +195,9 @@ function FailuresScreen() {
                     </div>
                     <p className="mt-3 text-sm text-muted-foreground">{e.failure_message}</p>
                     <div className="mt-3 rounded-xl border border-mint/30 bg-mint/5 p-3 text-sm">
-                      <div className="text-[10px] font-semibold uppercase tracking-wider text-mint">Recovery</div>
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-mint">
+                        Recovery
+                      </div>
                       <p className="mt-1 text-foreground">{e.recovery_action}</p>
                     </div>
                   </div>

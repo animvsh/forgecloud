@@ -92,20 +92,28 @@
 }
 
 @layer base {
-  * { border-color: var(--color-border); }
+  * {
+    border-color: var(--color-border);
+  }
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-display);
     -webkit-font-smoothing: antialiased;
   }
-  h1, h2, h3 { letter-spacing: -0.02em; }
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.02em;
+  }
 }
 
 @layer components {
   .squircle {
     border-radius: 28%;
-    box-shadow: 0 10px 30px -10px rgb(0 0 0 / 0.18), inset 0 1px 0 rgb(255 255 255 / 0.4);
+    box-shadow:
+      0 10px 30px -10px rgb(0 0 0 / 0.18),
+      inset 0 1px 0 rgb(255 255 255 / 0.4);
   }
   .pill-nav {
     background: var(--card);

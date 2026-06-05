@@ -1,6 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ScreenHeader } from "@/components/ScreenHeader";
-import { Rocket, Check, AlertTriangle, Loader2, ExternalLink, Eye, GitBranch, ShieldCheck } from "lucide-react";
+import {
+  Rocket,
+  Check,
+  AlertTriangle,
+  Loader2,
+  ExternalLink,
+  Eye,
+  GitBranch,
+  ShieldCheck,
+} from "lucide-react";
 import { useForgeState, useDeploy, useDeployProduction } from "@/lib/client";
 import { useState } from "react";
 
@@ -13,6 +22,7 @@ function DeploymentsScreen() {
   const deploy = useDeploy();
   const deployProd = useDeployProduction();
   const [busy, setBusy] = useState<string | null>(null);
+  const [deployError, setDeployError] = useState<string | null>(null);
 
   if (isLoading || !data) {
     return (
@@ -23,23 +33,26 @@ function DeploymentsScreen() {
   }
 
   const deployments = data.deployments;
-  const prs = data.prs.filter((p) => p.status === "approved");
-  const approvedCount = prs.length;
-  const pendingApprovals = data.approvals.length;
+  const readiness = data.deploymentReadiness;
   // Only unresolved recoveries (status === "blocked" / "investigating") gate the deploy.
   // "recovered" means the safety/recovery agent already handled it.
   const activeRecovery = data.recovery.filter((r) => r.status !== "recovered");
   const buildPassed = !activeRecovery.some((r) => r.failure_type === "build_failed");
   const testsPassed = !activeRecovery.some((r) => r.failure_type === "bad_output");
-  // P0-8: scope to recovery events from approved PRs only (not the whole project history).
-  const approvedPrIds = new Set(prs.map((p) => p.id));
-  const secretsClean = !data.recovery.some(
-    (r) => r.failure_type === "secret_detected" && r.status === "blocked" && (!r.pr_id || approvedPrIds.has(r.pr_id)),
-  );
   const lastDeploy = deployments[0];
-  const previousLive = deployments.find((d, i) => i > 0 && d.environment === "production" && d.status === "live");
+  const previousLive = deployments.find(
+    (d, i) => i > 0 && d.environment === "production" && d.status === "live",
+  );
+  const canDeployProduction = Boolean(readiness?.canDeployProduction);
+  const allowFailureInjection = Boolean(readiness?.config?.allowFailureInjection);
+  const deployDisabledReason = !readiness
+    ? "Deployment readiness is still loading"
+    : !canDeployProduction
+      ? "Resolve the pre-production checklist first"
+      : undefined;
 
   async function doDeploy(env: "preview" | "staging" | "production") {
+    setDeployError(null);
     setBusy(env);
     try {
       if (env === "production") {
@@ -47,15 +60,20 @@ function DeploymentsScreen() {
       } else {
         await deploy.mutateAsync({ environment: env });
       }
+    } catch (error) {
+      setDeployError(error instanceof Error ? error.message : "Deploy failed");
     } finally {
       setBusy(null);
     }
   }
 
   async function doFailDeploy() {
+    setDeployError(null);
     setBusy("fail");
     try {
       await deployProd.mutateAsync({ fail: true });
+    } catch (error) {
+      setDeployError(error instanceof Error ? error.message : "Failure simulation failed");
     } finally {
       setBusy(null);
     }
@@ -73,24 +91,41 @@ function DeploymentsScreen() {
               disabled={busy !== null}
               className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs hover:bg-muted disabled:opacity-40"
             >
-              {busy === "preview" ? <Loader2 className="size-3 animate-spin" /> : <Eye className="size-3" />}
+              {busy === "preview" ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <Eye className="size-3" />
+              )}
               Preview
             </button>
             <button
               onClick={doFailDeploy}
-              disabled={busy !== null}
+              disabled={busy !== null || !allowFailureInjection}
+              title={
+                !allowFailureInjection
+                  ? "Failure injection is disabled in production deploy mode"
+                  : undefined
+              }
               className="inline-flex items-center gap-1.5 rounded-full border border-coral bg-coral/10 px-3 py-1.5 text-xs text-coral hover:bg-coral/20 disabled:opacity-40"
             >
-              {busy === "fail" ? <Loader2 className="size-3 animate-spin" /> : <AlertTriangle className="size-3" />}
+              {busy === "fail" ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <AlertTriangle className="size-3" />
+              )}
               Simulate failure
             </button>
             <button
               onClick={() => doDeploy("production")}
-              disabled={busy !== null || pendingApprovals > 0}
-              title={pendingApprovals > 0 ? `Resolve ${pendingApprovals} pending approval${pendingApprovals === 1 ? "" : "s"} first` : undefined}
+              disabled={busy !== null || !canDeployProduction}
+              title={deployDisabledReason}
               className="inline-flex items-center gap-1.5 rounded-full bg-foreground px-3 py-1.5 text-xs text-background hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {busy === "production" ? <Loader2 className="size-3 animate-spin" /> : <Rocket className="size-3" />}
+              {busy === "production" ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <Rocket className="size-3" />
+              )}
               Deploy production
             </button>
           </div>
@@ -98,6 +133,12 @@ function DeploymentsScreen() {
       />
 
       <div className="space-y-6 p-4 sm:p-8">
+        {deployError && (
+          <div className="rounded-2xl border border-coral/30 bg-coral/10 px-4 py-3 text-sm text-coral">
+            {deployError}
+          </div>
+        )}
+
         <div className="rounded-3xl border border-border bg-card overflow-hidden">
           <div className="hidden sm:block border-b border-border bg-muted/40 px-5 py-3">
             <div className="grid grid-cols-12 text-xs uppercase tracking-wider text-muted-foreground">
@@ -112,15 +153,22 @@ function DeploymentsScreen() {
             {(["preview", "staging", "production"] as const).map((env) => {
               const d = deployments.find((dep) => dep.environment === env);
               return (
-                <div key={env} className="grid grid-cols-1 sm:grid-cols-12 sm:items-center gap-3 sm:gap-0 px-5 py-4 text-sm transition-colors hover:bg-muted/30">
+                <div
+                  key={env}
+                  className="grid grid-cols-1 sm:grid-cols-12 sm:items-center gap-3 sm:gap-0 px-5 py-4 text-sm transition-colors hover:bg-muted/30"
+                >
                   <div className="sm:col-span-2 font-medium capitalize">{env}</div>
                   <div className="sm:col-span-2">
                     {d ? (
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
-                        d.status === "live" ? "bg-mint/20 text-mint" :
-                        d.status === "failed" ? "bg-coral/20 text-coral" :
-                        "bg-amber/20 text-amber"
-                      }`}>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                          d.status === "live"
+                            ? "bg-mint/20 text-mint"
+                            : d.status === "failed"
+                              ? "bg-coral/20 text-coral"
+                              : "bg-amber/20 text-amber"
+                        }`}
+                      >
                         {d.status}
                       </span>
                     ) : (
@@ -163,14 +211,17 @@ function DeploymentsScreen() {
               ForgeCloud won't deploy to production until all checks pass.
             </p>
             <div className="mt-4 space-y-2 text-sm">
-              <CheckRow ok={buildPassed} label="Build passed" />
-              <CheckRow ok={testsPassed} label="QA tests passed" />
-              <CheckRow ok={approvedCount > 0} label={`${approvedCount} PR${approvedCount === 1 ? "" : "s"} approved`} />
-              <CheckRow ok={secretsClean} label="No secrets found" />
-              <CheckRow ok={pendingApprovals === 0} label={pendingApprovals === 0 ? "No pending approvals" : `${pendingApprovals} approval${pendingApprovals === 1 ? "" : "s"} pending`} inverted={pendingApprovals > 0} />
-              <CheckRow ok={true} label="Deployment config exists" />
-              <CheckRow ok={true} label="Rollback point created" />
+              {readiness?.checks?.map((check: { key: string; label: string; passed: boolean }) => (
+                <CheckRow key={check.key} ok={check.passed} label={check.label} />
+              ))}
+              <CheckRow ok={buildPassed} label="Build status clear" />
+              <CheckRow ok={testsPassed} label="QA status clear" />
             </div>
+            {readiness?.config?.missing?.length > 0 && (
+              <div className="mt-4 rounded-xl border border-amber/30 bg-amber/10 p-3 text-xs text-amber">
+                Missing deploy env: {readiness.config.missing.join(", ")}
+              </div>
+            )}
           </div>
 
           <div className="rounded-3xl border border-border bg-card p-6 card-hover">
@@ -186,10 +237,15 @@ function DeploymentsScreen() {
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Status</span>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
-                    lastDeploy.status === "live" ? "bg-mint/20 text-mint" :
-                    lastDeploy.status === "failed" ? "bg-coral/20 text-coral" : "bg-amber/20 text-amber"
-                  }`}>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                      lastDeploy.status === "live"
+                        ? "bg-mint/20 text-mint"
+                        : lastDeploy.status === "failed"
+                          ? "bg-coral/20 text-coral"
+                          : "bg-amber/20 text-amber"
+                    }`}
+                  >
                     {lastDeploy.status}
                   </span>
                 </div>
@@ -200,19 +256,27 @@ function DeploymentsScreen() {
                 {lastDeploy.railway_url && (
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">URL</span>
-                    <a href={lastDeploy.railway_url} target="_blank" rel="noreferrer" className="font-mono text-xs text-brand hover:underline">
+                    <a
+                      href={lastDeploy.railway_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-mono text-xs text-brand hover:underline"
+                    >
                       {lastDeploy.railway_url}
                     </a>
                   </div>
                 )}
                 {lastDeploy.status === "failed" && previousLive && (
                   <div className="mt-3 rounded-xl border border-mint/30 bg-mint/5 p-3 text-xs text-mint">
-                    <Check className="mr-1 inline size-3" /> Previous live version still active. No data loss.
+                    <Check className="mr-1 inline size-3" /> Previous live version still active. No
+                    data loss.
                   </div>
                 )}
               </div>
             ) : (
-              <p className="mt-3 text-sm text-muted-foreground">No deployments yet. Click "Preview" or "Deploy production" above.</p>
+              <p className="mt-3 text-sm text-muted-foreground">
+                No deployments yet. Click "Preview" or "Deploy production" above.
+              </p>
             )}
           </div>
         </div>
@@ -221,8 +285,8 @@ function DeploymentsScreen() {
   );
 }
 
-function CheckRow({ ok, label, inverted }: { ok: boolean; label: string; inverted?: boolean }) {
-  const passed = inverted ? !ok : ok;
+function CheckRow({ ok, label }: { ok: boolean; label: string }) {
+  const passed = ok;
   return (
     <div className="flex items-center gap-2">
       {passed ? (

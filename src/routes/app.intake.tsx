@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ArrowRight, ArrowLeft, Sparkles, Loader2, Zap, Plus, X } from "lucide-react";
-import { useStartIntake, useForgeState, useSkipToDemo, useRunAllTasks } from "@/lib/client";
+import { useStartIntake, useForgeState, useSkipToDemo } from "@/lib/client";
 
 export const Route = createFileRoute("/app/intake")({
   head: () => ({ meta: [{ title: "New project — ForgeCloud" }] }),
@@ -10,11 +10,36 @@ export const Route = createFileRoute("/app/intake")({
 });
 
 const STEPS = [
-  { key: "projectName", label: "What are you building?", placeholder: "A simple CRM for my sales team", defaultValue: "Simple CRM" },
-  { key: "userType", label: "Who will use it?", placeholder: "Sales team", defaultValue: "My five-person sales team" },
-  { key: "firstVersion", label: "What should v1 do first?", placeholder: "Track leads, notes, and follow-ups", defaultValue: "Lead dashboard, add lead form, notes per lead, follow-up date, basic login" },
-  { key: "style", label: "What design style?", placeholder: "Clean, modern, like Notion", defaultValue: "Clean, modern, Notion-like" },
-  { key: "reviewers", label: "Who reviews before merge?", placeholder: "Type a name and press Enter", defaultValue: "" },
+  {
+    key: "projectName",
+    label: "What are you building?",
+    placeholder: "A simple CRM for my sales team",
+    defaultValue: "Simple CRM",
+  },
+  {
+    key: "userType",
+    label: "Who will use it?",
+    placeholder: "Sales team",
+    defaultValue: "My five-person sales team",
+  },
+  {
+    key: "firstVersion",
+    label: "What should v1 do first?",
+    placeholder: "Track leads, notes, and follow-ups",
+    defaultValue: "Lead dashboard, add lead form, notes per lead, follow-up date, basic login",
+  },
+  {
+    key: "style",
+    label: "What design style?",
+    placeholder: "Clean, modern, like Notion",
+    defaultValue: "Clean, modern, Notion-like",
+  },
+  {
+    key: "reviewers",
+    label: "Who reviews before merge?",
+    placeholder: "Type a name and press Enter",
+    defaultValue: "",
+  },
 ] as const;
 
 function IntakeScreen() {
@@ -22,7 +47,6 @@ function IntakeScreen() {
   const { data } = useForgeState();
   const intake = useStartIntake();
   const skip = useSkipToDemo();
-  const runAll = useRunAllTasks();
   const [step, setStep] = useState(0);
   const [projectName, setProjectName] = useState<string>(STEPS[0].defaultValue);
   const [userType, setUserType] = useState<string>(STEPS[1].defaultValue);
@@ -41,7 +65,8 @@ function IntakeScreen() {
   };
   const currentStep = STEPS[step];
   const currentValue = currentStep.key === "reviewers" ? "" : values[currentStep.key];
-  const canAdvance = currentStep.key === "reviewers" ? reviewers.length > 0 : currentValue.trim().length > 1;
+  const canAdvance =
+    currentStep.key === "reviewers" ? reviewers.length > 0 : currentValue.trim().length > 1;
 
   const isLast = step === STEPS.length - 1;
 
@@ -55,20 +80,15 @@ function IntakeScreen() {
       style: style.trim(),
       reviewers,
       rawPrompt,
-    })) as { tasks?: any[]; plan?: any } | undefined;
+    })) as { tasks?: unknown[]; plan?: unknown } | undefined;
     const total = result?.tasks?.length ?? 0;
     const planName = projectName.trim() || "your project";
-    // Kick off the agents in the background — don't block navigation. The
-    // 2.5s poll on /app will pick up the live building status immediately.
-    runAll.mutateAsync({}).catch((err) => {
-      console.error("auto run-all failed", err);
-    });
-    toast.success(`Plan ready — building ${planName}`, {
+    toast.success(`Plan ready for ${planName}`, {
       description: total
-        ? `Spinning up agents on ${total} task${total === 1 ? "" : "s"}.`
-        : "Spinning up agents now.",
+        ? `Review ${total} task${total === 1 ? "" : "s"} before agents start.`
+        : "Review the plan before agents start.",
     });
-    navigate({ to: "/app" });
+    navigate({ to: "/app/chat" });
   }
 
   async function handleSkipToDemo() {
@@ -84,10 +104,15 @@ function IntakeScreen() {
             <ArrowLeft className="mr-1 inline size-3" /> Back home
           </Link>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span>Step {step + 1} of {STEPS.length}</span>
+            <span>
+              Step {step + 1} of {STEPS.length}
+            </span>
             <div className="flex gap-1">
               {STEPS.map((_, i) => (
-                <div key={i} className={`h-1 w-6 rounded-full ${i <= step ? "bg-brand" : "bg-muted"}`} />
+                <div
+                  key={i}
+                  className={`h-1 w-6 rounded-full ${i <= step ? "bg-brand" : "bg-muted"}`}
+                />
               ))}
             </div>
           </div>
@@ -177,11 +202,12 @@ function IntakeScreen() {
                 }}
               />
             )}
-            {!["reviewers"].includes(currentStep.key) && currentValue === currentStep.defaultValue && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Example pre-filled. Press Continue or edit it.
-              </p>
-            )}
+            {!["reviewers"].includes(currentStep.key) &&
+              currentValue === currentStep.defaultValue && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Example pre-filled. Press Continue or edit it.
+                </p>
+              )}
           </div>
 
           {currentStep.key === "firstVersion" && (
@@ -212,7 +238,15 @@ function IntakeScreen() {
                 disabled={!canAdvance || intake.isPending}
                 className="inline-flex items-center gap-2 rounded-full bg-brand px-6 py-2.5 font-medium text-brand-foreground hover:brightness-105 disabled:opacity-40"
               >
-                {intake.isPending ? <><Loader2 className="size-4 animate-spin" /> Generating plan...</> : <>Generate workspace <ArrowRight className="size-4" /></>}
+                {intake.isPending ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" /> Generating plan...
+                  </>
+                ) : (
+                  <>
+                    Generate plan <ArrowRight className="size-4" />
+                  </>
+                )}
               </button>
             ) : (
               <button
@@ -232,11 +266,17 @@ function IntakeScreen() {
             disabled={skip.isPending}
             className="inline-flex items-center gap-2 rounded-full border-2 border-dashed border-border bg-card px-5 py-2.5 text-sm font-medium text-muted-foreground hover:border-brand hover:text-foreground disabled:opacity-40"
           >
-            {skip.isPending ? <Loader2 className="size-4 animate-spin" /> : <Zap className="size-4" />}
+            {skip.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Zap className="size-4" />
+            )}
             Skip to demo — load Pleasure Pizza Ops
           </button>
           <div className="text-xs text-muted-foreground">
-            {data?.aiAvailable ? "AI agents ready" : "AI in fallback mode — you'll get a template plan"}
+            {data?.aiAvailable
+              ? "AI agents ready"
+              : "AI in fallback mode — you'll get a template plan"}
           </div>
         </div>
       </div>

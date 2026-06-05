@@ -1,23 +1,76 @@
-import { getDb, type Agent, type Project, type Task, type PullRequest, type RecoveryEvent } from "./db";
+import {
+  getDb,
+  type Agent,
+  type Project,
+  type Task,
+  type PullRequest,
+  type RecoveryEvent,
+} from "./db";
 import { ensureSeed, ids } from "./seed";
 import { classifyRisk, generatePrSummary, narrateRecovery, generateCode } from "./ai";
 import { getProvider } from "./providers";
 import { createNotification, findOrCreateBranchByName, recordCommit } from "./vcs";
 import { log as logger } from "./logger";
+import { runCodingTaskChecks } from "./runtime";
 
 const PRIMARY_MODEL = getProvider()?.primaryModel ?? "MiniMax-Text-01";
 const FALLBACK_MODEL = getProvider()?.fallbackModel ?? "MiniMax-M1";
 
 export const AGENT_DEFS = [
-  { type: "product", name: "Product Agent", role: "Turns user requests into features and tasks", defaultModel: PRIMARY_MODEL },
-  { type: "design", name: "Design Agent", role: "Creates UI layout and design direction", defaultModel: PRIMARY_MODEL },
-  { type: "frontend", name: "Frontend Agent", role: "Builds React components and pages", defaultModel: PRIMARY_MODEL },
-  { type: "backend", name: "Backend Agent", role: "Builds APIs, database schema, and auth (uses InsForge)", defaultModel: PRIMARY_MODEL },
-  { type: "qa", name: "QA Agent", role: "Tests the app and catches bugs before they ship", defaultModel: PRIMARY_MODEL },
-  { type: "devops", name: "DevOps Agent", role: "Builds, deploys, and rolls back on Railway", defaultModel: PRIMARY_MODEL },
-  { type: "auth", name: "Auth Agent", role: "Wires up team access and login", defaultModel: PRIMARY_MODEL },
-  { type: "safety", name: "Safety Agent", role: "Blocks secrets, dangerous commands, and risky deploys", defaultModel: PRIMARY_MODEL },
-  { type: "recovery", name: "Recovery Agent", role: "Handles failures, retries, and rollbacks", defaultModel: FALLBACK_MODEL },
+  {
+    type: "product",
+    name: "Product Agent",
+    role: "Turns user requests into features and tasks",
+    defaultModel: PRIMARY_MODEL,
+  },
+  {
+    type: "design",
+    name: "Design Agent",
+    role: "Creates UI layout and design direction",
+    defaultModel: PRIMARY_MODEL,
+  },
+  {
+    type: "frontend",
+    name: "Frontend Agent",
+    role: "Builds React components and pages",
+    defaultModel: PRIMARY_MODEL,
+  },
+  {
+    type: "backend",
+    name: "Backend Agent",
+    role: "Builds APIs, database schema, and auth (uses InsForge)",
+    defaultModel: PRIMARY_MODEL,
+  },
+  {
+    type: "qa",
+    name: "QA Agent",
+    role: "Tests the app and catches bugs before they ship",
+    defaultModel: PRIMARY_MODEL,
+  },
+  {
+    type: "devops",
+    name: "DevOps Agent",
+    role: "Builds, deploys, and rolls back on Railway",
+    defaultModel: PRIMARY_MODEL,
+  },
+  {
+    type: "auth",
+    name: "Auth Agent",
+    role: "Wires up team access and login",
+    defaultModel: PRIMARY_MODEL,
+  },
+  {
+    type: "safety",
+    name: "Safety Agent",
+    role: "Blocks secrets, dangerous commands, and risky deploys",
+    defaultModel: PRIMARY_MODEL,
+  },
+  {
+    type: "recovery",
+    name: "Recovery Agent",
+    role: "Handles failures, retries, and rollbacks",
+    defaultModel: FALLBACK_MODEL,
+  },
 ] as const;
 
 export type AgentType = (typeof AGENT_DEFS)[number]["type"];
@@ -26,7 +79,10 @@ export const AGENT_PERMS: Record<string, { allowed: string[]; needsApproval: str
   product: { allowed: ["create_tasks", "edit_specs"], needsApproval: ["delete_tasks"] },
   design: { allowed: ["edit_ui_files"], needsApproval: ["major_brand_changes"] },
   frontend: { allowed: ["edit_frontend_files"], needsApproval: ["production_deploy"] },
-  backend: { allowed: ["create_backend_functions", "edit_database"], needsApproval: ["database_migrations"] },
+  backend: {
+    allowed: ["create_backend_functions", "edit_database"],
+    needsApproval: ["database_migrations"],
+  },
   qa: { allowed: ["run_tests"], needsApproval: [] },
   devops: { allowed: ["create_preview_deploys"], needsApproval: ["production_deploy"] },
   auth: { allowed: ["edit_auth_files"], needsApproval: ["auth_changes"] },
@@ -74,11 +130,7 @@ export function getAgentByType(projectId: string, type: string): Agent | undefin
     .get(projectId, type) as Agent | undefined;
 }
 
-export function updateAgentStatus(
-  agentId: string,
-  status: string,
-  lastAction?: string,
-): void {
+export function updateAgentStatus(agentId: string, status: string, lastAction?: string): void {
   const db = getDb();
   if (lastAction) {
     db.prepare(
@@ -171,7 +223,9 @@ export async function runAgentOnTask(
   }
 
   let agent: Agent | undefined = task.assigned_agent_id
-    ? (db.prepare("SELECT * FROM agents WHERE id = ?").get(task.assigned_agent_id) as Agent | undefined)
+    ? (db.prepare("SELECT * FROM agents WHERE id = ?").get(task.assigned_agent_id) as
+        | Agent
+        | undefined)
     : undefined;
   // B2: if the assigned agent is missing (stale FK, etc.), fall back to the project's Frontend Agent
   // so the agent_runs row has a valid agent_id.
@@ -223,9 +277,10 @@ export async function runAgentOnTask(
         `Build failed on "${task.title}" — TypeScript or lint error`,
         "QA Agent isolated the bad file, Frontend Agent shipped a fix, build re-ran successfully",
       );
-      db.prepare(
-        `UPDATE agent_runs SET status = 'recovered', completed_at = ? WHERE id = ?`,
-      ).run(Date.now(), runId);
+      db.prepare(`UPDATE agent_runs SET status = 'recovered', completed_at = ? WHERE id = ?`).run(
+        Date.now(),
+        runId,
+      );
       result = { task, recovery };
     } else {
       try {
@@ -279,13 +334,17 @@ export async function runAgentOnTask(
     // try block threw before reaching a successful return.
     if (agent) {
       try {
-        db.prepare(`UPDATE agents SET current_task_id = NULL, status = 'idle' WHERE id = ?`).run(agent.id);
+        db.prepare(`UPDATE agents SET current_task_id = NULL, status = 'idle' WHERE id = ?`).run(
+          agent.id,
+        );
       } catch {
         // best-effort
       }
     }
     try {
-      db.prepare(`UPDATE tasks SET status = 'backlog' WHERE id = ? AND status = 'building'`).run(taskId);
+      db.prepare(`UPDATE tasks SET status = 'backlog' WHERE id = ? AND status = 'building'`).run(
+        taskId,
+      );
     } catch {
       // best-effort
     }
@@ -305,15 +364,29 @@ async function runTaskSuccess(
     task.description ?? "",
     agent?.name ?? "Agent",
   );
-  const modifiesDb = task.risk_level === "high" || /database|schema|table|column|migration|rls|alter table|drop table/i.test(task.title + " " + (task.description ?? ""));
-  const modifiesAuth = /auth|login|password|signup|signin|sign[- ]?up|sign[- ]?in|oauth|session|jwt|guard|permission|rbac|role[- ]?based|access[- ]?control/i.test(task.title);
+  const modifiesDb =
+    task.risk_level === "high" ||
+    /database|schema|table|column|migration|rls|alter table|drop table/i.test(
+      task.title + " " + (task.description ?? ""),
+    );
+  const modifiesAuth =
+    /auth|login|password|signup|signin|sign[- ]?up|sign[- ]?in|oauth|session|jwt|guard|permission|rbac|role[- ]?based|access[- ]?control/i.test(
+      task.title,
+    );
   // isProduction is detected from the title/description — the previous behavior
   // hardcoded `false` here, so "production deploy pipeline" / "go-live" tasks
   // never reached the high-risk branch.
-  const isProduction = /production|prod[- ]?deploy|go[- ]?live|release to prod|ship to prod|prod pipeline/i.test(
-    task.title + " " + (task.description ?? ""),
+  const isProduction =
+    /production|prod[- ]?deploy|go[- ]?live|release to prod|ship to prod|prod pipeline/i.test(
+      task.title + " " + (task.description ?? ""),
+    );
+  const risk = await classifyRisk(
+    task.title,
+    task.description ?? "",
+    modifiesDb,
+    modifiesAuth,
+    isProduction,
   );
-  const risk = await classifyRisk(task.title, task.description ?? "", modifiesDb, modifiesAuth, isProduction);
 
   // Generate real code files for this PR. The LLM produces 1-3 source files
   // matching the task; we store them in `changes` so the PR view can show
@@ -323,10 +396,27 @@ async function runTaskSuccess(
     task.description ?? "",
     agent?.name ?? "Frontend Agent",
   );
+  const runtime = await runCodingTaskChecks({
+    projectId: task.project_id,
+    runId,
+    taskId,
+    files: codeFiles,
+  });
+  if (runtime.status !== "passed") {
+    throw new Error(
+      `Runtime checks failed: ${runtime.checks
+        .filter((check) => check.status !== "passed")
+        .map((check) => check.summary)
+        .join("; ")}`,
+    );
+  }
 
   const prNumber = nextPrNumber(task.project_id);
   const prId = ids.newPR();
-  const sourceBranch = `feature/${task.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}`;
+  const sourceBranch = `feature/${task.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .slice(0, 40)}`;
   const previewUrl = `https://preview-${prNumber}.forgecloud.dev`;
   const requiresApproval = risk === "high" || risk === "med" || modifiesDb;
 
@@ -395,9 +485,7 @@ async function runTaskSuccess(
     });
   }
 
-  db.prepare(
-    `UPDATE tasks SET status = 'review', linked_pr_id = ? WHERE id = ?`,
-  ).run(prId, taskId);
+  db.prepare(`UPDATE tasks SET status = 'review', linked_pr_id = ? WHERE id = ?`).run(prId, taskId);
 
   if (requiresApproval) {
     const reason = modifiesDb
@@ -427,7 +515,7 @@ async function runTaskSuccess(
   // Agent idle state and current_task_id clear is handled by the finally block in runAgentOnTask.
   db.prepare(
     `UPDATE agent_runs SET status = 'completed', output_summary = ?, completed_at = ? WHERE id = ?`,
-  ).run(`Shipped PR #${prNumber}`, Date.now(), runId);
+  ).run(`Shipped PR #${prNumber}; runtime checks passed`, Date.now(), runId);
 
   const pr = db.prepare("SELECT * FROM pull_requests WHERE id = ?").get(prId) as PullRequest;
   return { task, pr };
@@ -477,9 +565,7 @@ export function recordSecretBlock(projectId: string, prId: string | null, secret
     Date.now(),
   );
   if (prId) {
-    db.prepare(
-      `UPDATE pull_requests SET status = 'blocked' WHERE id = ?`,
-    ).run(prId);
+    db.prepare(`UPDATE pull_requests SET status = 'blocked' WHERE id = ?`).run(prId);
   }
   // M4: surface the block in the bell too (not just recovery_events).
   const wsId = workspaceOfProject(projectId);
@@ -513,9 +599,9 @@ const SECRET_PATTERNS = [
   // Generic "sk|pk|api_key|secret|token" + 6+ alphanum
   /(?:sk|pk|api[_-]?key|secret|token)[_-][a-zA-Z0-9]{6,}/i,
   // OpenAI project-style keys: sk-proj-… (20+ alphanum)
-  /sk-(?:proj-|ant-|test-|live-|org-|prod-)[A-Za-z0-9_\-]{16,}/i,
+  /sk-(?:proj-|ant-|test-|live-|org-|prod-)[A-Za-z0-9_-]{16,}/i,
   // Anthropic API keys: sk-ant-api03-…
-  /sk-ant-api03-[A-Za-z0-9_\-]{20,}/i,
+  /sk-ant-api03-[A-Za-z0-9_-]{20,}/i,
   // Stripe live + test + restricted keys (real ones are much longer, but
   // 12 alphanum is the minimum to avoid false positives like "sk_live_xyz123")
   /sk_(?:live|test)_[A-Za-z0-9]{12,}/i,
@@ -524,13 +610,13 @@ const SECRET_PATTERNS = [
   // AWS access key id (AKIA / ASIA prefix + 16 uppercase)
   /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/,
   // Google API key
-  /AIza[0-9A-Za-z\-_]{35}/,
+  /AIza[0-9A-Za-z_-]{35}/,
   // GitHub personal access token
   /ghp_[a-zA-Z0-9]{36}/,
   // Slack tokens
   /xox[abp]-[a-zA-Z0-9-]+/,
   // JWT (header.payload.signature, base64url)
-  /\beyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\b/,
+  /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/,
   // PEM private key block
   /-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/,
 ];
@@ -562,20 +648,53 @@ export type DangerousActionHit = {
 
 const DANGER_RULES: Array<{ kind: DangerousActionHit["kind"]; title: string; pattern: RegExp }> = [
   // Shell / filesystem destruction
-  { kind: "shell_command", title: "Dangerous shell command (rm -rf / dd / shutdown)", pattern: /\b(rm\s+-rf\s+\/|sudo\s+rm\s+-rf|dd\s+if=|mkfs\.|shutdown\s+(?:-h|now)|:\(\)\s*\{\s*:\|:&\s*\};:)/i },
+  {
+    kind: "shell_command",
+    title: "Dangerous shell command (rm -rf / dd / shutdown)",
+    pattern:
+      /\b(rm\s+-rf\s+\/|sudo\s+rm\s+-rf|dd\s+if=|mkfs\.|shutdown\s+(?:-h|now)|:\(\)\s*\{\s*:\|:&\s*\};:)/i,
+  },
   // SQL DDL destruction
   { kind: "drop_table", title: "Dropping a database table", pattern: /\bDROP\s+TABLE\b/i },
-  { kind: "delete_database", title: "Deleting an entire database", pattern: /\b(DROP\s+DATABASE|TRUNCATE\s+\w+|DELETE\s+FROM\s+\w+\s*(?:;|$))/i },
+  {
+    kind: "delete_database",
+    title: "Deleting an entire database",
+    pattern: /\b(DROP\s+DATABASE|TRUNCATE\s+\w+|DELETE\s+FROM\s+\w+\s*(?:;|$))/i,
+  },
   // Money / pricing changes
-  { kind: "billing_change", title: "Editing billing / payment logic without approval", pattern: /\b(billing_amount|charge_customer|stripe\.charges\.create|refund|payment_method|invoice_total|price_cents)\b/i },
+  {
+    kind: "billing_change",
+    title: "Editing billing / payment logic without approval",
+    pattern:
+      /\b(billing_amount|charge_customer|stripe\.charges\.create|refund|payment_method|invoice_total|price_cents)\b/i,
+  },
   // External communication
-  { kind: "external_email", title: "Sending external email without approval", pattern: /\b(send(?:_|\s+)mail|sendgrid\.send|resend\.emails\.send|mailgun|aws\.ses\.sendemail|smtp\.send)\b/i },
+  {
+    kind: "external_email",
+    title: "Sending external email without approval",
+    pattern:
+      /\b(send(?:_|\s+)mail|sendgrid\.send|resend\.emails\.send|mailgun|aws\.ses\.sendemail|smtp\.send)\b/i,
+  },
   // Customer-data exposure
-  { kind: "expose_private_data", title: "Exposing private user data (PII unmasked in UI)", pattern: /\b(unmask\w*|show(?:_|\s+)?(?:full(?:_|\s+))?(?:phone|email|ssn|credit_card|address)|return\s+\*\s+from\s+users)\b/i },
+  {
+    kind: "expose_private_data",
+    title: "Exposing private user data (PII unmasked in UI)",
+    pattern:
+      /\b(unmask\w*|show(?:_|\s+)?(?:full(?:_|\s+))?(?:phone|email|ssn|credit_card|address)|return\s+\*\s+from\s+users)\b/i,
+  },
   // Build/test bypass
-  { kind: "merge_broken_build", title: "Bypassing failing build or tests", pattern: /\b(--no-verify|skip(?:_|\s+)tests?|ignore[-_]?failures?|FORCE_MERGE|allow[-_]failure)\b/i },
+  {
+    kind: "merge_broken_build",
+    title: "Bypassing failing build or tests",
+    pattern:
+      /\b(--no-verify|skip(?:_|\s+)tests?|ignore[-_]?failures?|FORCE_MERGE|allow[-_]failure)\b/i,
+  },
   // Permission changes
-  { kind: "permission_change", title: "Changing permissions (role escalation)", pattern: /\b(grant\s+all|role\s*=\s*['"]?(admin|owner|root)|chmod\s+[ugoa]?\+?s|setuid)\b/i },
+  {
+    kind: "permission_change",
+    title: "Changing permissions (role escalation)",
+    pattern: /\b(grant\s+all|role\s*=\s*['"]?(admin|owner|root)|chmod\s+[ugoa]?\+?s|setuid)\b/i,
+  },
 ];
 
 export function detectDangerousAction(text: string): DangerousActionHit | null {
@@ -590,9 +709,7 @@ export function detectDangerousAction(text: string): DangerousActionHit | null {
 // handful of common English expletives that would otherwise be persisted as
 // task titles in the demo. False positives (e.g. technical terms) are
 // acceptable since the user can rephrase.
-const PROFANITY_WORDS = [
-  "fuck", "shit", "bitch", "asshole", "bastard", "dick", "piss", "cunt",
-];
+const PROFANITY_WORDS = ["fuck", "shit", "bitch", "asshole", "bastard", "dick", "piss", "cunt"];
 export function detectProfanity(text: string): string | null {
   const lc = text.toLowerCase();
   for (const w of PROFANITY_WORDS) {
@@ -606,7 +723,9 @@ export function detectProfanity(text: string): string | null {
 }
 
 /** Convenience: combined guardrail check used by /api/chat. */
-export function detectGuardrailViolation(text: string): { kind: string; title: string; match: string } | null {
+export function detectGuardrailViolation(
+  text: string,
+): { kind: string; title: string; match: string } | null {
   const secret = detectSecret(text);
   if (secret) return { kind: "secret", title: "Hardcoded credential", match: secret };
   const danger = detectDangerousAction(text);
@@ -633,14 +752,16 @@ export function listPullRequests(projectId: string): PullRequest[] {
 export function getApprovalQueue(projectId: string) {
   const db = getDb();
   return db
-    .prepare("SELECT * FROM approvals WHERE project_id = ? AND status = 'pending' ORDER BY created_at DESC")
+    .prepare(
+      "SELECT * FROM approvals WHERE project_id = ? AND status = 'pending' ORDER BY created_at DESC",
+    )
     .all(projectId);
 }
 
 function workspaceOfProject(projectId: string): string | undefined {
-  const row = getDb()
-    .prepare("SELECT workspace_id FROM projects WHERE id = ?")
-    .get(projectId) as { workspace_id: string } | undefined;
+  const row = getDb().prepare("SELECT workspace_id FROM projects WHERE id = ?").get(projectId) as
+    | { workspace_id: string }
+    | undefined;
   return row?.workspace_id;
 }
 
@@ -650,23 +771,30 @@ export function decideApproval(
   approverName: string,
 ): { approval: unknown; pr: PullRequest | null } {
   const db = getDb();
-  db.prepare(
-    `UPDATE approvals SET status = ?, approver_name = ?, decided_at = ? WHERE id = ?`,
-  ).run(decision === "approve" ? "approved" : "rejected", approverName, Date.now(), approvalId);
-  const approval = db.prepare("SELECT * FROM approvals WHERE id = ?").get(approvalId) as { pr_id: string | null; project_id: string; kind: string | null };
+  db.prepare(`UPDATE approvals SET status = ?, approver_name = ?, decided_at = ? WHERE id = ?`).run(
+    decision === "approve" ? "approved" : "rejected",
+    approverName,
+    Date.now(),
+    approvalId,
+  );
+  const approval = db.prepare("SELECT * FROM approvals WHERE id = ?").get(approvalId) as {
+    pr_id: string | null;
+    project_id: string;
+    kind: string | null;
+  };
   let pr: PullRequest | null = null;
   // Helper: find the task linked to a PR either via the reverse link
   // (tasks.linked_pr_id) or the forward link (pull_requests.task_id). The
   // seed populates only the forward direction, so the reverse lookup misses
   // every seeded PR and the linked task never moves on approve/reject.
   const taskIdForPr = (prId: string): string | null => {
-    const t = db
-      .prepare("SELECT id FROM tasks WHERE linked_pr_id = ?")
-      .get(prId) as { id: string } | undefined;
+    const t = db.prepare("SELECT id FROM tasks WHERE linked_pr_id = ?").get(prId) as
+      | { id: string }
+      | undefined;
     if (t) return t.id;
-    const p = db
-      .prepare("SELECT task_id FROM pull_requests WHERE id = ?")
-      .get(prId) as { task_id: string | null } | undefined;
+    const p = db.prepare("SELECT task_id FROM pull_requests WHERE id = ?").get(prId) as
+      | { task_id: string | null }
+      | undefined;
     return p?.task_id ?? null;
   };
   if (approval?.pr_id) {
@@ -680,9 +808,7 @@ export function decideApproval(
         db.prepare(`UPDATE tasks SET status = 'done' WHERE id = ?`).run(taskId);
       }
     } else {
-      db.prepare(
-        `UPDATE pull_requests SET status = 'rejected' WHERE id = ?`,
-      ).run(approval.pr_id);
+      db.prepare(`UPDATE pull_requests SET status = 'rejected' WHERE id = ?`).run(approval.pr_id);
       // M1: rejection must unstick the task so the user can retry it.
       const taskId = taskIdForPr(approval.pr_id);
       if (taskId) {
@@ -696,7 +822,10 @@ export function decideApproval(
         workspaceId: wsId,
         projectId: approval.project_id,
         kind: decision === "approve" ? "pr_approved" : "pr_rejected",
-        title: decision === "approve" ? `PR #${pr.number} approved by ${approverName}` : `PR #${pr.number} rejected by ${approverName}`,
+        title:
+          decision === "approve"
+            ? `PR #${pr.number} approved by ${approverName}`
+            : `PR #${pr.number} rejected by ${approverName}`,
         body: pr.title,
         link: "/app/changes",
       });
@@ -710,9 +839,10 @@ export function decideApproval(
         workspaceId: wsId,
         projectId: approval.project_id,
         kind: decision === "approve" ? "pr_approved" : "pr_rejected",
-        title: decision === "approve"
-          ? `${approval.kind ?? "Approval"} approved by ${approverName}`
-          : `${approval.kind ?? "Approval"} rejected by ${approverName}`,
+        title:
+          decision === "approve"
+            ? `${approval.kind ?? "Approval"} approved by ${approverName}`
+            : `${approval.kind ?? "Approval"} rejected by ${approverName}`,
         body: "This change was gated outside a pull request.",
         link: "/app/changes",
       });
@@ -723,11 +853,19 @@ export function decideApproval(
 
 export function approvePr(prId: string, approverName: string): void {
   const db = getDb();
+  const now = Date.now();
   db.prepare(
-    `UPDATE pull_requests SET status = 'approved', approver_name = ?, approved_at = ? WHERE id = ?`,
-  ).run(approverName, Date.now(), prId);
+    `UPDATE pull_requests
+       SET status = 'approved',
+           approver_name = ?,
+           approved_at = ?,
+           merged_at = COALESCE(merged_at, ?)
+     WHERE id = ?`,
+  ).run(approverName, now, now, prId);
   db.prepare(`UPDATE tasks SET status = 'done' WHERE linked_pr_id = ?`).run(prId);
-  const pr = db.prepare("SELECT * FROM pull_requests WHERE id = ?").get(prId) as PullRequest | undefined;
+  const pr = db.prepare("SELECT * FROM pull_requests WHERE id = ?").get(prId) as
+    | PullRequest
+    | undefined;
   if (pr) {
     const wsId = workspaceOfProject(pr.project_id);
     if (wsId) {
@@ -778,16 +916,31 @@ export function recordDeployment(
   prId: string | null,
   environment: "preview" | "staging" | "production",
   status: string,
-  url?: string,
-  failureMessage?: string,
+  options: {
+    url?: string;
+    provider?: "railway" | "cloudflare" | "simulation";
+    failureMessage?: string;
+    buildLogs?: string;
+    rollbackTargetId?: string | null;
+  } = {},
 ): string {
   const db = getDb();
   const id = ids.newDeployment();
-  const railwayUrl =
-    url ?? (environment === "preview" ? `https://preview-${Date.now()}.forgecloud.dev` : null);
+  const provider = options.provider ?? "railway";
+  const fallbackUrl =
+    environment === "preview" && provider === "simulation"
+      ? `https://preview-${Date.now()}.forgecloud.dev`
+      : null;
+  const url = options.url ?? fallbackUrl;
+  const railwayUrl = provider === "railway" || provider === "simulation" ? url : null;
+  const cloudflareUrl = provider === "cloudflare" ? url : null;
+  const buildLogs =
+    options.buildLogs ??
+    options.failureMessage ??
+    `${provider} ${environment} deploy ${status} at ${new Date().toISOString()}`;
   db.prepare(
-    `INSERT INTO deployments (id, project_id, pr_id, environment, status, railway_url, cloudflare_url, build_logs, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO deployments (id, project_id, pr_id, environment, status, railway_url, cloudflare_url, build_logs, rollback_target_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     projectId,
@@ -795,8 +948,9 @@ export function recordDeployment(
     environment,
     status,
     railwayUrl,
-    null,
-    failureMessage ?? `Build succeeded at ${new Date().toISOString()}`,
+    cloudflareUrl,
+    buildLogs,
+    options.rollbackTargetId ?? null,
     Date.now(),
   );
   if (status === "failed") {
@@ -806,10 +960,11 @@ export function recordDeployment(
     ).run(
       ids.newRecovery(),
       projectId,
-      `${environment} deploy failed: ${failureMessage ?? "hosting timeout"}`,
+      `${environment} deploy failed: ${options.failureMessage ?? "hosting timeout"}`,
       Date.now(),
     );
   }
+  notifyDeployment(projectId, environment, status, url ?? undefined, options.failureMessage);
   return id;
 }
 

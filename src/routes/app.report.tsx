@@ -92,7 +92,8 @@ function ReportScreen() {
                 <p className="mt-3 max-w-xl text-sm text-muted-foreground">
                   Built by {agents.length} agents in collaboration with{" "}
                   {data.teamMembers.filter((m) => !m.is_ai).length} humans.
-                  {liveDeploy && ` Deployed to ${liveDeploy.railway_url || liveDeploy.cloudflare_url || "your preview environment"}.`}
+                  {liveDeploy &&
+                    ` Deployed to ${liveDeploy.railway_url || liveDeploy.cloudflare_url || "your preview environment"}.`}
                 </p>
               </div>
             </div>

@@ -29,7 +29,14 @@ interface MiniDiagramProps {
   recoveryCount: number;
 }
 
-export function MiniDiagram({ projectName, agentCount, taskCount, doneCount, prCount, recoveryCount }: MiniDiagramProps) {
+export function MiniDiagram({
+  projectName,
+  agentCount,
+  taskCount,
+  doneCount,
+  prCount,
+  recoveryCount,
+}: MiniDiagramProps) {
   const pct = taskCount > 0 ? Math.round((doneCount / taskCount) * 100) : 0;
 
   return (
@@ -74,10 +81,7 @@ export function MiniDiagram({ projectName, agentCount, taskCount, doneCount, prC
       </Node>
 
       {/* Center: Big completion check */}
-      <Node
-        className="size-16"
-        style={{ left: "42%", top: "25%", background: "var(--violet)" }}
-      >
+      <Node className="size-16" style={{ left: "42%", top: "25%", background: "var(--violet)" }}>
         <Check className="size-7 text-white" strokeWidth={2.5} />
       </Node>
 
